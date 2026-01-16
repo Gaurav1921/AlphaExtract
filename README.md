@@ -232,9 +232,9 @@ Contributions welcome! Please:
 
 ## Contact
 
-Your Name - your.email@example.com
+Your Name - gjs190201@gmail.com
 
-Project Link: [https://github.com/YOUR_USERNAME/AlphaExtract](https://github.com/YOUR_USERNAME/AlphaExtract)
+Project Link: [[https://github.com/YOUR_USERNAME/AlphaExtract](https://github.com/YOUR_USERNAME/AlphaExtract)](https://github.com/Gaurav1921/AlphaExtract)
 
 ---
 
