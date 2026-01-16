@@ -1,0 +1,26 @@
+{
+  "ticker": "GOOGL",
+  "filing_date": "2025-02-05",
+  "sections_found": [
+    "item_1a",
+    "item_7",
+    "item_8"
+  ],
+  "section_stats": {
+    "item_1a": {
+      "chars": 95616,
+      "words": 14023,
+      "lines": 97
+    },
+    "item_7": {
+      "chars": 94007,
+      "words": 12671,
+      "lines": 131
+    },
+    "item_8": {
+      "chars": 308815,
+      "words": 32841,
+      "lines": 453
+    }
+  }
+}

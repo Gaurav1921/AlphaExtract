@@ -1,0 +1,26 @@
+{
+  "ticker": "AAPL",
+  "filing_date": "2025-10-31",
+  "sections_found": [
+    "item_1a",
+    "item_7",
+    "item_8"
+  ],
+  "section_stats": {
+    "item_1a": {
+      "chars": 71336,
+      "words": 10246,
+      "lines": 25
+    },
+    "item_7": {
+      "chars": 25653,
+      "words": 3902,
+      "lines": 37
+    },
+    "item_8": {
+      "chars": 131091,
+      "words": 14730,
+      "lines": 241
+    }
+  }
+}
