@@ -1,0 +1,68 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environments
+venv/
+ENV/
+env/
+.venv
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Data Files (large files - don't commit to GitHub)
+data/raw/*.html
+data/raw/*.htm
+data/processed/*.md
+data/processed/*.csv
+
+# Keep metadata files (they're small)
+!data/raw/*.json
+!data/processed/*_metadata.json
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Environment variables
+.env
+
+# Model weights (if any, these are large)
+*.pt
+*.pth
+*.h5
+*.pkl
+
+# Temporary files
+*.tmp
+temp/
+tmp/

@@ -1,0 +1,22 @@
+# Core Dependencies
+docling==2.68.0
+requests==2.31.0
+beautifulsoup4==4.12.3
+pandas==2.2.0
+python-dotenv==1.0.0
+
+# Phase 2 Dependencies (Sentiment Analysis)
+transformers==4.36.0
+torch==2.1.2
+sentencepiece==0.1.99
+
+# Data Processing
+numpy==1.26.3
+openpyxl==3.1.2
+
+# Testing
+pytest==7.4.3
+pytest-cov==4.1.0
+
+# Utilities
+tqdm==4.66.1
