@@ -1,0 +1,48 @@
+{
+  "ticker": "MSFT",
+  "sections": {
+    "item_1a": {
+      "file": "MSFT_2025-07-30_item_1a.txt",
+      "word_count": 10119,
+      "scores": {
+        "negative": 0.0508392800732948,
+        "neutral": 0.5737399850158963,
+        "positive": 0.3754207356331814,
+        "compound": 0.3245814555598866,
+        "num_chunks": 27
+      },
+      "label": "neutral",
+      "signal": "BUY"
+    },
+    "item_7": {
+      "file": "MSFT_2025-07-30_item_7.txt",
+      "word_count": 7316,
+      "scores": {
+        "negative": 0.2018272439020007,
+        "neutral": 0.1528750737636601,
+        "positive": 0.645297685583498,
+        "compound": 0.4434704416814973,
+        "num_chunks": 21
+      },
+      "label": "positive",
+      "signal": "BUY"
+    },
+    "item_8": {
+      "file": "MSFT_2025-07-30_item_8.txt",
+      "word_count": 17368,
+      "scores": {
+        "negative": 0.03225637497824899,
+        "neutral": 0.13603025431720853,
+        "positive": 0.8317133754339945,
+        "compound": 0.7994570004557455,
+        "num_chunks": 52
+      },
+      "label": "positive",
+      "signal": "STRONG_BUY"
+    }
+  },
+  "overall": {
+    "compound": 0.4671461789672319,
+    "signal": "BUY"
+  }
+}

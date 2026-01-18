@@ -1,0 +1,48 @@
+{
+  "ticker": "AAPL",
+  "sections": {
+    "item_1a": {
+      "file": "AAPL_2025-10-31_item_1a.txt",
+      "word_count": 10246,
+      "scores": {
+        "negative": 0.036043730273247025,
+        "neutral": 0.6209947252344991,
+        "positive": 0.34296154451211364,
+        "compound": 0.3069178142388666,
+        "num_chunks": 28
+      },
+      "label": "neutral",
+      "signal": "BUY"
+    },
+    "item_7": {
+      "file": "AAPL_2025-10-31_item_7.txt",
+      "word_count": 3902,
+      "scores": {
+        "negative": 0.08770805230568902,
+        "neutral": 0.45614923388047685,
+        "positive": 0.4561427102372736,
+        "compound": 0.3684346579315846,
+        "num_chunks": 12
+      },
+      "label": "neutral",
+      "signal": "BUY"
+    },
+    "item_8": {
+      "file": "AAPL_2025-10-31_item_8.txt",
+      "word_count": 14730,
+      "scores": {
+        "negative": 0.03562293040769343,
+        "neutral": 0.2786610625152755,
+        "positive": 0.6857159956842653,
+        "compound": 0.650093065276572,
+        "num_chunks": 48
+      },
+      "label": "positive",
+      "signal": "STRONG_BUY"
+    }
+  },
+  "overall": {
+    "compound": 0.3953042081101532,
+    "signal": "BUY"
+  }
+}

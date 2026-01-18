@@ -1,0 +1,48 @@
+{
+  "ticker": "GOOGL",
+  "sections": {
+    "item_1a": {
+      "file": "GOOGL_2025-02-05_item_1a.txt",
+      "word_count": 14023,
+      "scores": {
+        "negative": 0.033028856231481184,
+        "neutral": 0.47649808034926494,
+        "positive": 0.4904730670904375,
+        "compound": 0.4574442108589563,
+        "num_chunks": 39
+      },
+      "label": "positive",
+      "signal": "BUY"
+    },
+    "item_7": {
+      "file": "GOOGL_2025-02-05_item_7.txt",
+      "word_count": 12671,
+      "scores": {
+        "negative": 0.1488987640438413,
+        "neutral": 0.26036728347834637,
+        "positive": 0.5907339475910597,
+        "compound": 0.4418351835472184,
+        "num_chunks": 37
+      },
+      "label": "positive",
+      "signal": "BUY"
+    },
+    "item_8": {
+      "file": "GOOGL_2025-02-05_item_8.txt",
+      "word_count": 32841,
+      "scores": {
+        "negative": 0.03825031042195986,
+        "neutral": 0.2849607537806659,
+        "positive": 0.6767889398622587,
+        "compound": 0.6385386294402989,
+        "num_chunks": 99
+      },
+      "label": "positive",
+      "signal": "STRONG_BUY"
+    }
+  },
+  "overall": {
+    "compound": 0.4752429572591149,
+    "signal": "BUY"
+  }
+}

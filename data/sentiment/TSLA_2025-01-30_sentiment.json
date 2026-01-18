@@ -1,0 +1,48 @@
+{
+  "ticker": "TSLA",
+  "sections": {
+    "item_1a": {
+      "file": "TSLA_2025-01-30_item_1a.txt",
+      "word_count": 12133,
+      "scores": {
+        "negative": 0.03554521801404368,
+        "neutral": 0.6444231020629216,
+        "positive": 0.3200316763737328,
+        "compound": 0.2844864583596891,
+        "num_chunks": 32
+      },
+      "label": "neutral",
+      "signal": "BUY"
+    },
+    "item_7": {
+      "file": "TSLA_2025-01-30_item_7.txt",
+      "word_count": 9991,
+      "scores": {
+        "negative": 0.2964422988023518,
+        "neutral": 0.2714161856267868,
+        "positive": 0.4321415175810117,
+        "compound": 0.13569921877865992,
+        "num_chunks": 28
+      },
+      "label": "positive",
+      "signal": "HOLD"
+    },
+    "item_8": {
+      "file": "TSLA_2025-01-30_item_8.txt",
+      "word_count": 2756,
+      "scores": {
+        "negative": 0.03448930429374034,
+        "neutral": 0.2120627733407577,
+        "positive": 0.7534479302719599,
+        "compound": 0.7189586259782196,
+        "num_chunks": 10
+      },
+      "label": "positive",
+      "signal": "STRONG_BUY"
+    }
+  },
+  "overall": {
+    "compound": 0.26038493975385113,
+    "signal": "BUY"
+  }
+}
