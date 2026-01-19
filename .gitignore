@@ -55,6 +55,13 @@ Thumbs.db
 
 # Environment variables
 .env
+.env.local
+.env.*.local
+
+# API Keys (extra safety)
+*.key
+*_key.txt
+credentials.json
 
 # Model weights (if any, these are large)
 *.pt
