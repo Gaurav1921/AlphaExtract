@@ -19,7 +19,7 @@ from sentence_transformers import SentenceTransformer
 import google.generativeai as genai
 from dotenv import load_dotenv
 
-from opensearch_setup import OpenSearchManager
+from src.search.opensearch_client import OpenSearchManager
 
 # Load environment variables from .env file
 load_dotenv()

@@ -16,7 +16,7 @@ import google.generativeai as genai
 from dotenv import load_dotenv
 import re
 
-from opensearch_setup import OpenSearchManager
+from src.search.opensearch_client import OpenSearchManager
 
 load_dotenv()
 

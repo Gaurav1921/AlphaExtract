@@ -18,8 +18,8 @@ import logging
 from tqdm import tqdm
 import numpy as np
 
-from opensearch_setup import OpenSearchManager
-from document_chunker import DocumentChunker
+from src.search.opensearch_client import OpenSearchManager
+from src.data.chunker import DocumentChunker
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

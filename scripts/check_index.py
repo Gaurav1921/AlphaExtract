@@ -1,5 +1,5 @@
 """Quick check of OpenSearch index"""
-from opensearch_setup import OpenSearchManager
+from src.search.opensearch_client import OpenSearchManager
 
 manager = OpenSearchManager()
 stats = manager.get_stats()
