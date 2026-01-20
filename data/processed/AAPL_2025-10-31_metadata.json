@@ -1,7 +1,7 @@
 {
   "ticker": "AAPL",
   "filing_date": "2025-10-31",
-  "parse_time": 2.101069,
+  "parse_time": 2.597872,
   "tables": {
     "count": 62,
     "summary": [
@@ -320,13 +320,13 @@
   "metadata": {
     "total_chars": 494454,
     "total_words": 51521,
-    "extraction_date": "2026-01-17T02:38:05.645014"
+    "extraction_date": "2026-01-21T04:42:42.250415"
   },
   "sections": {
     "metadata": {
       "total_chars": 494454,
       "total_words": 51521,
-      "extraction_date": "2026-01-17T02:38:05.645014"
+      "extraction_date": "2026-01-21T04:42:42.250415"
     }
   }
 }

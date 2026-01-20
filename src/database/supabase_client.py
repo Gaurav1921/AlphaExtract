@@ -12,7 +12,6 @@ Tables:
 """
 
 import os
-from dotenv import load_dotenv
 from supabase import create_client, Client
 from datetime import datetime
 from typing import Dict, List, Optional
@@ -31,15 +30,10 @@ class SupabaseDB:
         """
         Initialize Supabase client.
         
-        Note: Loads .env file automatically.
-        
         Args:
             url: Supabase project URL
             key: Supabase API key
         """
-        # Load environment variables
-        load_dotenv()
-        
         self.url = url or os.getenv('SUPABASE_URL')
         self.key = key or os.getenv('SUPABASE_KEY')
         
@@ -184,11 +178,15 @@ class SupabaseDB:
                 'created_at': datetime.utcnow().isoformat()
             }
             
-            self.client.table('sentiment_scores').insert(data).execute()
-            logger.info(f"✓ Inserted sentiment: {ticker} {filing_date}")
+            self.client.table('sentiment_scores').upsert(data).execute()
+            logger.info(f"✓ Saved sentiment: {ticker} {filing_date}")
             return True
         
         except Exception as e:
+            # Check if it's a duplicate error
+            if '23505' in str(e) or 'duplicate key' in str(e).lower():
+                logger.info(f"⏭️  Sentiment already exists: {ticker} {filing_date}")
+                return True  # Not really an error
             logger.error(f"Failed to insert sentiment: {e}")
             return False
     
