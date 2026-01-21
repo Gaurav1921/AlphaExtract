@@ -1,0 +1,482 @@
+{
+  "ticker": "MSFT",
+  "filing_date": "2024-07-30",
+  "parse_time": 12.960381,
+  "tables": {
+    "count": 92,
+    "summary": [
+      {
+        "index": 0,
+        "rows": 2,
+        "cols": 2
+      },
+      {
+        "index": 1,
+        "rows": 8,
+        "cols": 2
+      },
+      {
+        "index": 2,
+        "rows": 3,
+        "cols": 3
+      },
+      {
+        "index": 3,
+        "rows": 13,
+        "cols": 5
+      },
+      {
+        "index": 4,
+        "rows": 4,
+        "cols": 3
+      },
+      {
+        "index": 5,
+        "rows": 64,
+        "cols": 8
+      },
+      {
+        "index": 6,
+        "rows": 12,
+        "cols": 7
+      },
+      {
+        "index": 7,
+        "rows": 12,
+        "cols": 13
+      },
+      {
+        "index": 8,
+        "rows": 13,
+        "cols": 18
+      },
+      {
+        "index": 9,
+        "rows": 8,
+        "cols": 17
+      },
+      {
+        "index": 10,
+        "rows": 6,
+        "cols": 3
+      },
+      {
+        "index": 11,
+        "rows": 14,
+        "cols": 3
+      },
+      {
+        "index": 12,
+        "rows": 10,
+        "cols": 3
+      },
+      {
+        "index": 13,
+        "rows": 15,
+        "cols": 13
+      },
+      {
+        "index": 14,
+        "rows": 23,
+        "cols": 13
+      },
+      {
+        "index": 15,
+        "rows": 7,
+        "cols": 13
+      },
+      {
+        "index": 16,
+        "rows": 7,
+        "cols": 13
+      },
+      {
+        "index": 17,
+        "rows": 7,
+        "cols": 13
+      },
+      {
+        "index": 18,
+        "rows": 16,
+        "cols": 9
+      },
+      {
+        "index": 19,
+        "rows": 31,
+        "cols": 13
+      },
+      {
+        "index": 20,
+        "rows": 15,
+        "cols": 5
+      },
+      {
+        "index": 21,
+        "rows": 14,
+        "cols": 13
+      },
+      {
+        "index": 22,
+        "rows": 9,
+        "cols": 1
+      },
+      {
+        "index": 23,
+        "rows": 12,
+        "cols": 11
+      },
+      {
+        "index": 24,
+        "rows": 46,
+        "cols": 13
+      },
+      {
+        "index": 25,
+        "rows": 20,
+        "cols": 13
+      },
+      {
+        "index": 26,
+        "rows": 65,
+        "cols": 9
+      },
+      {
+        "index": 27,
+        "rows": 62,
+        "cols": 13
+      },
+      {
+        "index": 28,
+        "rows": 40,
+        "cols": 13
+      },
+      {
+        "index": 29,
+        "rows": 13,
+        "cols": 13
+      },
+      {
+        "index": 30,
+        "rows": 12,
+        "cols": 13
+      },
+      {
+        "index": 31,
+        "rows": 21,
+        "cols": 13
+      },
+      {
+        "index": 32,
+        "rows": 16,
+        "cols": 13
+      },
+      {
+        "index": 33,
+        "rows": 13,
+        "cols": 13
+      },
+      {
+        "index": 34,
+        "rows": 13,
+        "cols": 13
+      },
+      {
+        "index": 35,
+        "rows": 38,
+        "cols": 33
+      },
+      {
+        "index": 36,
+        "rows": 38,
+        "cols": 33
+      },
+      {
+        "index": 37,
+        "rows": 18,
+        "cols": 25
+      },
+      {
+        "index": 38,
+        "rows": 18,
+        "cols": 25
+      },
+      {
+        "index": 39,
+        "rows": 14,
+        "cols": 9
+      },
+      {
+        "index": 40,
+        "rows": 18,
+        "cols": 9
+      },
+      {
+        "index": 41,
+        "rows": 38,
+        "cols": 17
+      },
+      {
+        "index": 42,
+        "rows": 14,
+        "cols": 17
+      },
+      {
+        "index": 43,
+        "rows": 27,
+        "cols": 13
+      },
+      {
+        "index": 44,
+        "rows": 11,
+        "cols": 13
+      },
+      {
+        "index": 45,
+        "rows": 13,
+        "cols": 9
+      },
+      {
+        "index": 46,
+        "rows": 19,
+        "cols": 9
+      },
+      {
+        "index": 47,
+        "rows": 16,
+        "cols": 8
+      },
+      {
+        "index": 48,
+        "rows": 11,
+        "cols": 9
+      },
+      {
+        "index": 49,
+        "rows": 9,
+        "cols": 5
+      },
+      {
+        "index": 50,
+        "rows": 10,
+        "cols": 9
+      },
+      {
+        "index": 51,
+        "rows": 12,
+        "cols": 9
+      },
+      {
+        "index": 52,
+        "rows": 11,
+        "cols": 10
+      },
+      {
+        "index": 53,
+        "rows": 11,
+        "cols": 29
+      },
+      {
+        "index": 54,
+        "rows": 14,
+        "cols": 25
+      },
+      {
+        "index": 55,
+        "rows": 14,
+        "cols": 17
+      },
+      {
+        "index": 56,
+        "rows": 16,
+        "cols": 5
+      },
+      {
+        "index": 57,
+        "rows": 31,
+        "cols": 25
+      },
+      {
+        "index": 58,
+        "rows": 16,
+        "cols": 5
+      },
+      {
+        "index": 59,
+        "rows": 27,
+        "cols": 13
+      },
+      {
+        "index": 60,
+        "rows": 12,
+        "cols": 13
+      },
+      {
+        "index": 61,
+        "rows": 19,
+        "cols": 13
+      },
+      {
+        "index": 62,
+        "rows": 48,
+        "cols": 9
+      },
+      {
+        "index": 63,
+        "rows": 16,
+        "cols": 13
+      },
+      {
+        "index": 64,
+        "rows": 13,
+        "cols": 9
+      },
+      {
+        "index": 65,
+        "rows": 13,
+        "cols": 5
+      },
+      {
+        "index": 66,
+        "rows": 16,
+        "cols": 13
+      },
+      {
+        "index": 67,
+        "rows": 15,
+        "cols": 13
+      },
+      {
+        "index": 68,
+        "rows": 44,
+        "cols": 9
+      },
+      {
+        "index": 69,
+        "rows": 21,
+        "cols": 9
+      },
+      {
+        "index": 70,
+        "rows": 13,
+        "cols": 13
+      },
+      {
+        "index": 71,
+        "rows": 14,
+        "cols": 25
+      },
+      {
+        "index": 72,
+        "rows": 25,
+        "cols": 17
+      },
+      {
+        "index": 73,
+        "rows": 51,
+        "cols": 13
+      },
+      {
+        "index": 74,
+        "rows": 9,
+        "cols": 13
+      },
+      {
+        "index": 75,
+        "rows": 8,
+        "cols": 20
+      },
+      {
+        "index": 76,
+        "rows": 16,
+        "cols": 9
+      },
+      {
+        "index": 77,
+        "rows": 9,
+        "cols": 13
+      },
+      {
+        "index": 78,
+        "rows": 25,
+        "cols": 13
+      },
+      {
+        "index": 79,
+        "rows": 12,
+        "cols": 13
+      },
+      {
+        "index": 80,
+        "rows": 20,
+        "cols": 13
+      },
+      {
+        "index": 81,
+        "rows": 12,
+        "cols": 13
+      },
+      {
+        "index": 82,
+        "rows": 15,
+        "cols": 4
+      },
+      {
+        "index": 83,
+        "rows": 13,
+        "cols": 21
+      },
+      {
+        "index": 84,
+        "rows": 13,
+        "cols": 21
+      },
+      {
+        "index": 85,
+        "rows": 11,
+        "cols": 21
+      },
+      {
+        "index": 86,
+        "rows": 14,
+        "cols": 21
+      },
+      {
+        "index": 87,
+        "rows": 20,
+        "cols": 21
+      },
+      {
+        "index": 88,
+        "rows": 33,
+        "cols": 21
+      },
+      {
+        "index": 89,
+        "rows": 33,
+        "cols": 21
+      },
+      {
+        "index": 90,
+        "rows": 6,
+        "cols": 1
+      },
+      {
+        "index": 91,
+        "rows": 45,
+        "cols": 3
+      }
+    ]
+  },
+  "metadata": {
+    "total_chars": 751502,
+    "total_words": 81690,
+    "extraction_date": "2026-01-22T01:46:10.378805"
+  },
+  "sections": {
+    "metadata": {
+      "total_chars": 751502,
+      "total_words": 81690,
+      "extraction_date": "2026-01-22T01:46:10.378805"
+    }
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "ticker": "TSLA",
+  "sections": {
+    "1a": {
+      "scores": {
+        "compound": 0.17768165776506067
+      },
+      "signal": "HOLD",
+      "word_count": 12584
+    },
+    "7": {
+      "scores": {
+        "compound": 0.20625019241124393
+      },
+      "signal": "BUY",
+      "word_count": 10083
+    },
+    "8": {
+      "scores": {
+        "compound": 0.863052193261683
+      },
+      "signal": "STRONG_BUY",
+      "word_count": 29846
+    }
+  },
+  "overall": {
+    "compound": 0.41566134781266256,
+    "signal": "BUY"
+  }
+}

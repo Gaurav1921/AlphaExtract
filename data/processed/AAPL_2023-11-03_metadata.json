@@ -1,0 +1,352 @@
+{
+  "ticker": "AAPL",
+  "filing_date": "2023-11-03",
+  "parse_time": 1.653085,
+  "tables": {
+    "count": 66,
+    "summary": [
+      {
+        "index": 0,
+        "rows": 2,
+        "cols": 3
+      },
+      {
+        "index": 1,
+        "rows": 2,
+        "cols": 3
+      },
+      {
+        "index": 2,
+        "rows": 2,
+        "cols": 3
+      },
+      {
+        "index": 3,
+        "rows": 2,
+        "cols": 3
+      },
+      {
+        "index": 4,
+        "rows": 2,
+        "cols": 3
+      },
+      {
+        "index": 5,
+        "rows": 7,
+        "cols": 9
+      },
+      {
+        "index": 6,
+        "rows": 2,
+        "cols": 3
+      },
+      {
+        "index": 7,
+        "rows": 12,
+        "cols": 9
+      },
+      {
+        "index": 8,
+        "rows": 2,
+        "cols": 3
+      },
+      {
+        "index": 9,
+        "rows": 4,
+        "cols": 21
+      },
+      {
+        "index": 10,
+        "rows": 2,
+        "cols": 3
+      },
+      {
+        "index": 11,
+        "rows": 29,
+        "cols": 9
+      },
+      {
+        "index": 12,
+        "rows": 12,
+        "cols": 27
+      },
+      {
+        "index": 13,
+        "rows": 5,
+        "cols": 39
+      },
+      {
+        "index": 14,
+        "rows": 9,
+        "cols": 30
+      },
+      {
+        "index": 15,
+        "rows": 9,
+        "cols": 30
+      },
+      {
+        "index": 16,
+        "rows": 6,
+        "cols": 18
+      },
+      {
+        "index": 17,
+        "rows": 5,
+        "cols": 18
+      },
+      {
+        "index": 18,
+        "rows": 8,
+        "cols": 30
+      },
+      {
+        "index": 19,
+        "rows": 5,
+        "cols": 18
+      },
+      {
+        "index": 20,
+        "rows": 4,
+        "cols": 27
+      },
+      {
+        "index": 21,
+        "rows": 9,
+        "cols": 9
+      },
+      {
+        "index": 22,
+        "rows": 32,
+        "cols": 18
+      },
+      {
+        "index": 23,
+        "rows": 19,
+        "cols": 18
+      },
+      {
+        "index": 24,
+        "rows": 42,
+        "cols": 12
+      },
+      {
+        "index": 25,
+        "rows": 28,
+        "cols": 18
+      },
+      {
+        "index": 26,
+        "rows": 46,
+        "cols": 18
+      },
+      {
+        "index": 27,
+        "rows": 8,
+        "cols": 18
+      },
+      {
+        "index": 28,
+        "rows": 12,
+        "cols": 18
+      },
+      {
+        "index": 29,
+        "rows": 19,
+        "cols": 42
+      },
+      {
+        "index": 30,
+        "rows": 19,
+        "cols": 42
+      },
+      {
+        "index": 31,
+        "rows": 5,
+        "cols": 6
+      },
+      {
+        "index": 32,
+        "rows": 8,
+        "cols": 12
+      },
+      {
+        "index": 33,
+        "rows": 10,
+        "cols": 18
+      },
+      {
+        "index": 34,
+        "rows": 5,
+        "cols": 12
+      },
+      {
+        "index": 35,
+        "rows": 8,
+        "cols": 12
+      },
+      {
+        "index": 36,
+        "rows": 5,
+        "cols": 12
+      },
+      {
+        "index": 37,
+        "rows": 5,
+        "cols": 12
+      },
+      {
+        "index": 38,
+        "rows": 5,
+        "cols": 12
+      },
+      {
+        "index": 39,
+        "rows": 6,
+        "cols": 18
+      },
+      {
+        "index": 40,
+        "rows": 15,
+        "cols": 18
+      },
+      {
+        "index": 41,
+        "rows": 11,
+        "cols": 18
+      },
+      {
+        "index": 42,
+        "rows": 21,
+        "cols": 12
+      },
+      {
+        "index": 43,
+        "rows": 9,
+        "cols": 18
+      },
+      {
+        "index": 44,
+        "rows": 13,
+        "cols": 27
+      },
+      {
+        "index": 45,
+        "rows": 11,
+        "cols": 18
+      },
+      {
+        "index": 46,
+        "rows": 11,
+        "cols": 18
+      },
+      {
+        "index": 47,
+        "rows": 15,
+        "cols": 30
+      },
+      {
+        "index": 48,
+        "rows": 8,
+        "cols": 6
+      },
+      {
+        "index": 49,
+        "rows": 6,
+        "cols": 18
+      },
+      {
+        "index": 50,
+        "rows": 15,
+        "cols": 18
+      },
+      {
+        "index": 51,
+        "rows": 4,
+        "cols": 18
+      },
+      {
+        "index": 52,
+        "rows": 8,
+        "cols": 6
+      },
+      {
+        "index": 53,
+        "rows": 21,
+        "cols": 18
+      },
+      {
+        "index": 54,
+        "rows": 6,
+        "cols": 18
+      },
+      {
+        "index": 55,
+        "rows": 7,
+        "cols": 18
+      },
+      {
+        "index": 56,
+        "rows": 7,
+        "cols": 12
+      },
+      {
+        "index": 57,
+        "rows": 3,
+        "cols": 6
+      },
+      {
+        "index": 58,
+        "rows": 2,
+        "cols": 6
+      },
+      {
+        "index": 59,
+        "rows": 9,
+        "cols": 9
+      },
+      {
+        "index": 60,
+        "rows": 14,
+        "cols": 27
+      },
+      {
+        "index": 61,
+        "rows": 22,
+        "cols": 27
+      },
+      {
+        "index": 62,
+        "rows": 32,
+        "cols": 27
+      },
+      {
+        "index": 63,
+        "rows": 4,
+        "cols": 27
+      },
+      {
+        "index": 64,
+        "rows": 6,
+        "cols": 12
+      },
+      {
+        "index": 65,
+        "rows": 35,
+        "cols": 15
+      }
+    ]
+  },
+  "metadata": {
+    "total_chars": 506085,
+    "total_words": 51188,
+    "extraction_date": "2026-01-22T01:28:59.041285"
+  },
+  "sections": {
+    "metadata": {
+      "total_chars": 506085,
+      "total_words": 51188,
+      "extraction_date": "2026-01-22T01:28:59.041285"
+    }
+  }
+}

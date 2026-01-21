@@ -1,0 +1,30 @@
+{
+  "ticker": "GOOGL",
+  "sections": {
+    "1a": {
+      "scores": {
+        "compound": 0.19734645271673798
+      },
+      "signal": "HOLD",
+      "word_count": 10967
+    },
+    "7": {
+      "scores": {
+        "compound": 0.5664924113079906
+      },
+      "signal": "STRONG_BUY",
+      "word_count": 12177
+    },
+    "8": {
+      "scores": {
+        "compound": 0.5308645524084568
+      },
+      "signal": "STRONG_BUY",
+      "word_count": 32239
+    }
+  },
+  "overall": {
+    "compound": 0.4315678054777284,
+    "signal": "BUY"
+  }
+}

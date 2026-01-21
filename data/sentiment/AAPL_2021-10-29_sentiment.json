@@ -1,0 +1,30 @@
+{
+  "ticker": "AAPL",
+  "sections": {
+    "1a": {
+      "scores": {
+        "compound": 0.19671814665198326
+      },
+      "signal": "HOLD",
+      "word_count": 10875
+    },
+    "7": {
+      "scores": {
+        "compound": 0.2760261247167364
+      },
+      "signal": "BUY",
+      "word_count": 3564
+    },
+    "8": {
+      "scores": {
+        "compound": 0.6321962608024478
+      },
+      "signal": "STRONG_BUY",
+      "word_count": 17607
+    }
+  },
+  "overall": {
+    "compound": 0.3683135107237225,
+    "signal": "BUY"
+  }
+}

@@ -1,14 +1,14 @@
 """
-Anomaly Detection Engine
-------------------------
+Enhanced Anomaly Detection Engine
+---------------------------------
 Detects unusual patterns by comparing current filings to historical data.
+Now with rich context extraction and detailed comparison information.
 
 Anomaly Types:
 1. New keyword mentions (first appearance)
 2. Sentiment shifts (compared to previous quarters)
 3. Keyword frequency changes (5x increase/decrease)
 4. Topic disappearances (mentioned before, now missing)
-5. Risk escalation (minor → major)
 """
 
 from pathlib import Path
@@ -27,112 +27,95 @@ logger = logging.getLogger(__name__)
 class AnomalyDetector:
     """
     Detects anomalies by comparing current vs. historical filings.
+    Enhanced with context extraction and detailed descriptions.
     """
     
-    # Important financial keywords to track
     TRACKED_KEYWORDS = {
         'regulation': ['regulation', 'regulatory', 'compliance', 'legal'],
-        'tariff': ['tariff', 'trade war', 'import tax', 'duty'],
+        'tariff': ['tariff', 'trade war', 'import tax', 'duty', 'trade restriction'],
         'supply_chain': ['supply chain', 'logistics', 'supplier', 'manufacturing'],
         'competition': ['competition', 'competitive', 'competitor', 'rival'],
-        'china': ['china', 'chinese'],
-        'ai': ['artificial intelligence', 'AI', 'machine learning', 'ML'],
-        'cybersecurity': ['cybersecurity', 'data breach', 'hacking', 'ransomware'],
-        'inflation': ['inflation', 'price increase', 'cost pressure'],
-        'recession': ['recession', 'economic downturn', 'slowdown'],
-        'interest_rate': ['interest rate', 'fed rate', 'monetary policy']
+        'china': ['china', 'chinese', 'prc'],
+        'ai': ['artificial intelligence', 'AI', 'machine learning', 'ML', 'deep learning', 'neural network'],
+        'cybersecurity': ['cybersecurity', 'cyber security', 'data breach', 'hacking', 'ransomware', 'security incident'],
+        'inflation': ['inflation', 'price increase', 'cost pressure', 'rising costs'],
+        'recession': ['recession', 'economic downturn', 'slowdown', 'economic uncertainty'],
+        'interest_rate': ['interest rate', 'fed rate', 'monetary policy', 'federal reserve']
     }
     
     def __init__(self, data_dir: Path = None):
-        """
-        Initialize anomaly detector.
-        
-        Args:
-            data_dir: Directory containing sentiment and section data
-        """
         if data_dir is None:
             data_dir = Path("data")
         
         self.data_dir = data_dir
         self.sentiment_dir = data_dir / "sentiment"
         self.sections_dir = data_dir / "sections"
+        self.anomalies_dir = data_dir / "anomalies"
+        self.anomalies_dir.mkdir(parents=True, exist_ok=True)
         
-        logger.info("Anomaly Detector initialized")
+        logger.info("Enhanced Anomaly Detector initialized")
     
     def load_sentiment_history(self, ticker: str) -> List[Dict]:
-        """
-        Load all sentiment files for a ticker.
-        
-        Args:
-            ticker: Stock ticker
-            
-        Returns:
-            List of sentiment dicts sorted by date
-        """
+        """Load all sentiment files for a ticker."""
         files = list(self.sentiment_dir.glob(f"{ticker}_*_sentiment.json"))
         
         history = []
         for file in files:
             with open(file, 'r') as f:
                 data = json.load(f)
-                
-                # Parse date from filename
                 parts = file.stem.split('_')
                 if len(parts) >= 2:
                     data['filing_date'] = parts[1]
-                
                 history.append(data)
         
-        # Sort by date
         history.sort(key=lambda x: x.get('filing_date', ''))
-        
         return history
     
     def load_section_text(self, ticker: str, filing_date: str, section: str) -> Optional[str]:
-        """
-        Load text for a specific section.
-        
-        Args:
-            ticker: Stock ticker
-            filing_date: Filing date
-            section: Section name (item_1a, item_7, item_8)
-            
-        Returns:
-            Section text or None
-        """
-        # Find matching file
+        """Load text for a specific section."""
         pattern = f"{ticker}_{filing_date}_{section}.txt"
         files = list(self.sections_dir.glob(pattern))
         
         if not files:
-            logger.warning(f"Section not found: {pattern}")
             return None
         
         with open(files[0], 'r', encoding='utf-8') as f:
             return f.read()
     
-    def extract_keywords(self, text: str) -> Counter:
+    def extract_keywords_with_context(self, text: str, window_size: int = 100) -> Dict:
         """
-        Extract and count tracked keywords.
+        Extract keywords and their surrounding context.
         
-        Args:
-            text: Input text
-            
         Returns:
-            Counter of keyword frequencies
+            Dict with keyword counts and context snippets
         """
         text_lower = text.lower()
-        keyword_counts = Counter()
+        results = {}
         
         for category, keywords in self.TRACKED_KEYWORDS.items():
             count = 0
+            contexts = []
+            
             for keyword in keywords:
-                count += len(re.findall(r'\b' + re.escape(keyword.lower()) + r'\b', text_lower))
+                pattern = r'\b' + re.escape(keyword.lower()) + r'\b'
+                for match in re.finditer(pattern, text_lower):
+                    count += 1
+                    # Extract context around the match
+                    start = max(0, match.start() - window_size)
+                    end = min(len(text), match.end() + window_size)
+                    context = text[start:end].strip()
+                    # Clean up context
+                    context = ' '.join(context.split())
+                    if len(contexts) < 5:  # Keep max 5 context snippets
+                        contexts.append(f"...{context}...")
             
             if count > 0:
-                keyword_counts[category] = count
+                results[category] = {
+                    'count': count,
+                    'contexts': contexts
+                }
         
-        return keyword_counts
+        return results
     
     def detect_sentiment_shift(
         self,
@@ -140,26 +123,15 @@ class AnomalyDetector:
         history: List[Dict],
         threshold: float = 0.15
     ) -> List[Dict]:
-        """
-        Detect significant sentiment shifts.
-        
-        Args:
-            current: Current filing sentiment
-            history: Historical sentiment data
-            threshold: Minimum change to flag (default: 0.15)
-            
-        Returns:
-            List of anomalies detected
-        """
+        """Detect significant sentiment shifts with detailed comparison."""
         anomalies = []
         
         if not history:
             return anomalies
         
-        # Get previous filing
         previous = history[-1]
+        historical_years = [h.get('filing_date', 'unknown')[:4] for h in history]
         
-        # Compare overall sentiment
         current_score = current.get('overall', {}).get('compound', 0)
         previous_score = previous.get('overall', {}).get('compound', 0)
         
@@ -167,40 +139,51 @@ class AnomalyDetector:
         
         if abs(delta) >= threshold:
             direction = "more positive" if delta > 0 else "more negative"
+            
+            # Calculate historical average
+            hist_scores = [h.get('overall', {}).get('compound', 0) for h in history]
+            hist_avg = sum(hist_scores) / len(hist_scores) if hist_scores else 0
+            
             anomalies.append({
                 'type': 'sentiment_shift',
                 'severity': 'high' if abs(delta) >= 0.3 else 'medium',
                 'section': 'overall',
-                'current_score': current_score,
-                'previous_score': previous_score,
-                'delta': delta,
-                'description': f"Overall sentiment shifted {abs(delta):.2f} points {direction}",
+                'current_score': round(current_score, 3),
+                'previous_score': round(previous_score, 3),
+                'historical_average': round(hist_avg, 3),
+                'delta': round(delta, 3),
+                'description': f"Overall sentiment shifted {abs(delta):.2f} points {direction} (from {previous_score:+.2f} to {current_score:+.2f})",
+                'comparison_details': f"Previous filing ({previous.get('filing_date', 'unknown')}): {previous_score:+.3f}\nHistorical average ({len(history)} filings): {hist_avg:+.3f}\nCurrent: {current_score:+.3f}",
+                'historical_years': historical_years,
                 'direction': direction
             })
         
-        # Compare section-level sentiment
+        # Section-level analysis
         for section in ['item_1a', 'item_7', 'item_8']:
             if section not in current.get('sections', {}):
                 continue
-            
             if section not in previous.get('sections', {}):
                 continue
             
-            current_sec = current['sections'][section]['scores']['compound']
-            previous_sec = previous['sections'][section]['scores']['compound']
+            current_sec = current['sections'][section].get('scores', {}).get('compound', 0)
+            previous_sec = previous['sections'][section].get('scores', {}).get('compound', 0)
             
             delta = current_sec - previous_sec
             
             if abs(delta) >= threshold:
                 direction = "more positive" if delta > 0 else "more negative"
+                section_name = {'item_1a': 'Risk Factors', 'item_7': 'MD&A', 'item_8': 'Financial Statements'}[section]
+                
                 anomalies.append({
                     'type': 'sentiment_shift',
                     'severity': 'medium',
                     'section': section,
-                    'current_score': current_sec,
-                    'previous_score': previous_sec,
-                    'delta': delta,
-                    'description': f"{section} sentiment {direction} (Δ {delta:+.2f})",
+                    'current_score': round(current_sec, 3),
+                    'previous_score': round(previous_sec, 3),
+                    'delta': round(delta, 3),
+                    'description': f"{section_name} sentiment shifted {abs(delta):.2f} points {direction}",
+                    'comparison_details': f"Previous: {previous_sec:+.3f} → Current: {current_sec:+.3f}",
+                    'historical_years': historical_years,
                     'direction': direction
                 })
         
@@ -208,81 +191,79 @@ class AnomalyDetector:
     
     def detect_new_keywords(
         self,
-        current_keywords: Counter,
-        historical_keywords: List[Counter]
+        current_keywords: Dict,
+        historical_keywords: List[Dict],
+        current_date: str
     ) -> List[Dict]:
-        """
-        Detect newly appearing keywords.
-        
-        Args:
-            current_keywords: Current keyword counts
-            historical_keywords: List of historical keyword counts
-            
-        Returns:
-            List of anomalies
-        """
+        """Detect newly appearing keywords with context."""
         anomalies = []
         
         if not historical_keywords:
             return anomalies
         
-        # Get all keywords that appeared in history
+        historical_years = list(set(h.get('_filing_date', 'unknown')[:4] for h in historical_keywords if '_filing_date' in h))
+        
         historical_set = set()
         for hist in historical_keywords:
             historical_set.update(hist.keys())
+        historical_set.discard('_filing_date')
         
-        # Find new keywords
-        new_keywords = set(current_keywords.keys()) - historical_set
+        current_set = set(current_keywords.keys())
+        new_keywords = current_set - historical_set
         
         for keyword in new_keywords:
+            kw_data = current_keywords[keyword]
+            count = kw_data['count'] if isinstance(kw_data, dict) else kw_data
+            contexts = kw_data.get('contexts', []) if isinstance(kw_data, dict) else []
+            
             anomalies.append({
                 'type': 'new_keyword',
                 'severity': 'high',
                 'keyword': keyword,
-                'count': current_keywords[keyword],
-                'description': f"First mention of '{keyword}' ({current_keywords[keyword]} occurrences)"
+                'count': count,
+                'description': f"First mention of '{keyword}' in {current_date[:4]} filing ({count} occurrences) - not found in {len(historical_keywords)} prior filings",
+                'comparison_details': f"This keyword was NOT mentioned in any of the {len(historical_keywords)} historical filings analyzed.\nFirst appearance in {current_date} with {count} mentions.",
+                'context_snippets': contexts[:3],
+                'historical_years': historical_years
             })
         
         return anomalies
     
     def detect_frequency_changes(
         self,
-        current_keywords: Counter,
-        historical_keywords: List[Counter],
+        current_keywords: Dict,
+        historical_keywords: List[Dict],
+        current_date: str,
         multiplier: float = 3.0
     ) -> List[Dict]:
-        """
-        Detect significant frequency changes.
-        
-        Args:
-            current_keywords: Current keyword counts
-            historical_keywords: Historical keyword counts
-            multiplier: Threshold multiplier (default: 3x change)
-            
-        Returns:
-            List of anomalies
-        """
+        """Detect significant frequency changes with context."""
         anomalies = []
         
         if not historical_keywords:
             return anomalies
         
+        historical_years = list(set(h.get('_filing_date', 'unknown')[:4] for h in historical_keywords if '_filing_date' in h))
+        
         # Calculate average historical frequency
         avg_historical = Counter()
         for hist in historical_keywords:
-            avg_historical.update(hist)
+            for key, value in hist.items():
+                if key == '_filing_date':
+                    continue
+                count = value['count'] if isinstance(value, dict) else value
+                avg_historical[key] += count
         
-        # Average across filings
         num_filings = len(historical_keywords)
         for key in avg_historical:
             avg_historical[key] /= num_filings
         
         # Compare current to average
-        for keyword in current_keywords:
+        for keyword, kw_data in current_keywords.items():
             if keyword not in avg_historical:
                 continue
             
-            current_count = current_keywords[keyword]
+            current_count = kw_data['count'] if isinstance(kw_data, dict) else kw_data
+            contexts = kw_data.get('contexts', []) if isinstance(kw_data, dict) else []
             avg_count = avg_historical[keyword]
             
             if avg_count == 0:
@@ -296,9 +277,12 @@ class AnomalyDetector:
                     'severity': 'high' if ratio >= 5 else 'medium',
                     'keyword': keyword,
                     'current_count': current_count,
-                    'average_count': avg_count,
-                    'ratio': ratio,
-                    'description': f"'{keyword}' mentioned {ratio:.1f}x more than average ({current_count} vs {avg_count:.0f})"
+                    'average_count': round(avg_count, 1),
+                    'ratio': round(ratio, 1),
+                    'description': f"'{keyword}' mentioned {ratio:.1f}x more than historical average ({current_count} vs avg {avg_count:.0f}) in {current_date[:4]}",
+                    'comparison_details': f"Current filing ({current_date}): {current_count} mentions\nHistorical average ({num_filings} filings from {', '.join(historical_years)}): {avg_count:.1f} mentions\nThis represents a {ratio:.1f}x increase",
+                    'context_snippets': contexts[:3],
+                    'historical_years': historical_years
                 })
             elif ratio <= 1/multiplier:
                 anomalies.append({
@@ -306,49 +290,50 @@ class AnomalyDetector:
                     'severity': 'medium',
                     'keyword': keyword,
                     'current_count': current_count,
-                    'average_count': avg_count,
-                    'ratio': ratio,
-                    'description': f"'{keyword}' mentioned {1/ratio:.1f}x less than average ({current_count} vs {avg_count:.0f})"
+                    'average_count': round(avg_count, 1),
+                    'ratio': round(ratio, 2),
+                    'description': f"'{keyword}' mentioned {1/ratio:.1f}x less than historical average ({current_count} vs avg {avg_count:.0f})",
+                    'comparison_details': f"Current: {current_count} mentions vs Historical average: {avg_count:.1f} mentions ({num_filings} filings)",
+                    'context_snippets': contexts[:3],
+                    'historical_years': historical_years
                 })
         
         return anomalies
     
     def detect_missing_topics(
         self,
-        current_keywords: Counter,
-        historical_keywords: List[Counter],
+        current_keywords: Dict,
+        historical_keywords: List[Dict],
         min_historical_count: int = 5
     ) -> List[Dict]:
-        """
-        Detect topics that disappeared.
-        
-        Args:
-            current_keywords: Current keyword counts
-            historical_keywords: Historical keyword counts
-            min_historical_count: Minimum past mentions to flag
-            
-        Returns:
-            List of anomalies
-        """
+        """Detect topics that disappeared."""
         anomalies = []
         
         if not historical_keywords:
             return anomalies
         
-        # Get keywords that were common in history
+        historical_years = list(set(h.get('_filing_date', 'unknown')[:4] for h in historical_keywords if '_filing_date' in h))
+        
         historical_totals = Counter()
         for hist in historical_keywords:
-            historical_totals.update(hist)
+            for key, value in hist.items():
+                if key == '_filing_date':
+                    continue
+                count = value['count'] if isinstance(value, dict) else value
+                historical_totals[key] += count
         
-        # Find keywords that disappeared
+        current_set = set(current_keywords.keys())
+        
         for keyword, count in historical_totals.items():
-            if count >= min_historical_count and keyword not in current_keywords:
+            if count >= min_historical_count and keyword not in current_set:
                 anomalies.append({
                     'type': 'missing_topic',
                     'severity': 'medium',
                     'keyword': keyword,
                     'historical_count': count,
-                    'description': f"'{keyword}' no longer mentioned (previously {count} times across {len(historical_keywords)} filings)"
+                    'description': f"'{keyword}' no longer mentioned - previously appeared {count} times across {len(historical_keywords)} filings",
+                    'comparison_details': f"Total mentions in prior filings: {count}\nYears analyzed: {', '.join(historical_years)}\nCurrent filing: 0 mentions",
+                    'historical_years': historical_years
                 })
         
         return anomalies
@@ -358,32 +343,21 @@ class AnomalyDetector:
         ticker: str,
         current_filing_date: Optional[str] = None
     ) -> Dict:
-        """
-        Complete anomaly analysis for a ticker.
-        
-        Args:
-            ticker: Stock ticker
-            current_filing_date: Date of current filing (uses latest if None)
-            
-        Returns:
-            Dict with all detected anomalies
-        """
+        """Complete anomaly analysis for a ticker."""
         logger.info(f"\n{'='*80}")
         logger.info(f"ANOMALY DETECTION: {ticker}")
         logger.info(f"{'='*80}")
         
-        # Load sentiment history
         sentiment_history = self.load_sentiment_history(ticker)
         
         if len(sentiment_history) < 2:
             logger.warning(f"Need at least 2 filings for {ticker} (found {len(sentiment_history)})")
             return {
                 'ticker': ticker,
-                'error': 'Insufficient historical data',
+                'error': f'Insufficient historical data - found {len(sentiment_history)} filing(s), need at least 2',
                 'anomalies': []
             }
         
-        # Get current and historical data
         current = sentiment_history[-1]
         history = sentiment_history[:-1]
         
@@ -391,61 +365,63 @@ class AnomalyDetector:
         logger.info(f"Current filing: {current_date}")
         logger.info(f"Comparing to {len(history)} historical filings")
         
-        # Extract keywords from sections
-        current_keywords = Counter()
+        # Extract keywords with context
+        current_keywords = {}
         historical_keywords = []
         
-        # Current filing keywords
         for section in ['item_1a', 'item_7']:
             text = self.load_section_text(ticker, current_date, section)
             if text:
-                current_keywords.update(self.extract_keywords(text))
+                section_kw = self.extract_keywords_with_context(text)
+                for kw, data in section_kw.items():
+                    if kw in current_keywords:
+                        current_keywords[kw]['count'] += data['count']
+                        current_keywords[kw]['contexts'].extend(data['contexts'])
+                    else:
+                        current_keywords[kw] = data
         
-        # Historical keywords
         for hist in history:
             hist_date = hist.get('filing_date', '')
-            hist_keywords = Counter()
+            hist_keywords = {'_filing_date': hist_date}
             
             for section in ['item_1a', 'item_7']:
                 text = self.load_section_text(ticker, hist_date, section)
                 if text:
-                    hist_keywords.update(self.extract_keywords(text))
+                    section_kw = self.extract_keywords_with_context(text)
+                    for kw, data in section_kw.items():
+                        if kw in hist_keywords:
+                            hist_keywords[kw]['count'] += data['count']
+                        else:
+                            hist_keywords[kw] = data
             
-            if hist_keywords:
+            if len(hist_keywords) > 1:
                 historical_keywords.append(hist_keywords)
         
         # Detect anomalies
         all_anomalies = []
         
-        # 1. Sentiment shifts
         logger.info("\n[1] Detecting sentiment shifts...")
         sentiment_anomalies = self.detect_sentiment_shift(current, history)
         all_anomalies.extend(sentiment_anomalies)
-        logger.info(f"  Found {len(sentiment_anomalies)} sentiment anomalies")
         
-        # 2. New keywords
         logger.info("\n[2] Detecting new keyword mentions...")
-        new_keyword_anomalies = self.detect_new_keywords(current_keywords, historical_keywords)
+        new_keyword_anomalies = self.detect_new_keywords(current_keywords, historical_keywords, current_date)
         all_anomalies.extend(new_keyword_anomalies)
-        logger.info(f"  Found {len(new_keyword_anomalies)} new keywords")
         
-        # 3. Frequency changes
         logger.info("\n[3] Detecting frequency changes...")
-        frequency_anomalies = self.detect_frequency_changes(current_keywords, historical_keywords)
+        frequency_anomalies = self.detect_frequency_changes(current_keywords, historical_keywords, current_date)
         all_anomalies.extend(frequency_anomalies)
-        logger.info(f"  Found {len(frequency_anomalies)} frequency changes")
         
-        # 4. Missing topics
         logger.info("\n[4] Detecting missing topics...")
         missing_anomalies = self.detect_missing_topics(current_keywords, historical_keywords)
         all_anomalies.extend(missing_anomalies)
-        logger.info(f"  Found {len(missing_anomalies)} missing topics")
         
         # Compile report
         report = {
             'ticker': ticker,
             'current_filing_date': current_date,
             'num_historical_filings': len(history),
+            'historical_dates': [h.get('filing_date', 'unknown') for h in history],
             'total_anomalies': len(all_anomalies),
             'anomalies_by_severity': {
                 'high': len([a for a in all_anomalies if a.get('severity') == 'high']),
@@ -458,8 +434,6 @@ class AnomalyDetector:
         
         logger.info(f"\n{'='*80}")
         logger.info(f"SUMMARY: {len(all_anomalies)} total anomalies detected")
-        logger.info(f"  High severity: {report['anomalies_by_severity']['high']}")
-        logger.info(f"  Medium severity: {report['anomalies_by_severity']['medium']}")
         logger.info(f"{'='*80}")
         
         return report
@@ -467,7 +441,7 @@ class AnomalyDetector:
     def save_report(self, report: Dict, output_dir: Path = None):
         """Save anomaly report to JSON."""
         if output_dir is None:
-            output_dir = Path("data/anomalies")
+            output_dir = self.anomalies_dir
         
         output_dir.mkdir(parents=True, exist_ok=True)
         
@@ -485,15 +459,13 @@ class AnomalyDetector:
         print(f"ANOMALY REPORT: {report['ticker']}")
         print(f"{'='*80}")
         print(f"Filing Date: {report['current_filing_date']}")
+        print(f"Compared to: {report['num_historical_filings']} historical filings")
         print(f"Total Anomalies: {report['total_anomalies']}")
-        print(f"  High Severity: {report['anomalies_by_severity']['high']}")
-        print(f"  Medium Severity: {report['anomalies_by_severity']['medium']}")
         
         if not report['anomalies']:
             print("\nNo anomalies detected - filing appears normal.")
             return
         
-        # Group by type
         by_type = {}
         for anomaly in report['anomalies']:
             atype = anomaly['type']
@@ -501,33 +473,25 @@ class AnomalyDetector:
                 by_type[atype] = []
             by_type[atype].append(anomaly)
         
-        # Print each type
         for atype, anomalies in by_type.items():
             print(f"\n{atype.upper().replace('_', ' ')} ({len(anomalies)}):")
             print("-" * 80)
             
-            for i, anomaly in enumerate(anomalies[:5], 1):  # Show top 5
+            for i, anomaly in enumerate(anomalies[:5], 1):
                 severity = anomaly.get('severity', 'medium')
                 icon = '🔴' if severity == 'high' else '🟡'
                 print(f"{icon} {i}. {anomaly['description']}")
-            
-            if len(anomalies) > 5:
-                print(f"   ... and {len(anomalies) - 5} more")
+                if 'comparison_details' in anomaly:
+                    print(f"   {anomaly['comparison_details']}")
 
-
-# ============================================================================
-# TESTING
-# ============================================================================
 
 if __name__ == "__main__":
     print("=" * 80)
-    print("ANOMALY DETECTION ENGINE")
+    print("ENHANCED ANOMALY DETECTION ENGINE")
     print("=" * 80)
     
-    # Initialize detector
     detector = AnomalyDetector()
     
-    # Analyze each company
     tickers = ['AAPL', 'GOOGL', 'MSFT', 'TSLA']
     
     for ticker in tickers:
@@ -535,14 +499,9 @@ if __name__ == "__main__":
             report = detector.analyze_ticker(ticker)
             detector.print_report(report)
             detector.save_report(report)
-            
-            if ticker != tickers[-1]:
-                input("\nPress Enter for next company...")
-        
         except Exception as e:
             logger.error(f"Failed to analyze {ticker}: {e}")
     
     print("\n" + "=" * 80)
     print("ANOMALY DETECTION COMPLETE")
     print("=" * 80)
-    print("\nReports saved to: data/anomalies/")

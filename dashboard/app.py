@@ -14,14 +14,12 @@ from datetime import datetime
 import pandas as pd
 import subprocess
 
-# Add to path
 sys.path.append(str(Path(__file__).parent.parent))
 
 from src.rag.enhanced_rag import EnhancedRAG
 from src.models.anomaly import AnomalyDetector
 from src.database.supabase_client import SupabaseDB
 
-# Page config
 st.set_page_config(
     page_title="AlphaExtract - AI Financial Intelligence",
     page_icon="🎯",
@@ -29,7 +27,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS
+# Fixed CSS - Better contrast for signal colors on dark background
 st.markdown("""
 <style>
     .main-header {
@@ -41,23 +39,74 @@ st.markdown("""
         margin-bottom: 0.5rem;
     }
     .metric-card {
-        background-color: #f8fafc;
+        background-color: #1e293b;
         border-radius: 10px;
         padding: 20px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        border: 1px solid #334155;
     }
-    .signal-strong-buy { color: #00FF00; font-weight: bold; font-size: 1.5rem; }
-    .signal-buy { color: #90EE90; font-weight: bold; font-size: 1.5rem; }
-    .signal-hold { color: #FFD700; font-weight: bold; font-size: 1.5rem; }
-    .signal-sell { color: #FFA500; font-weight: bold; font-size: 1.5rem; }
-    .signal-strong-sell { color: #FF0000; font-weight: bold; font-size: 1.5rem; }
+    .metric-label {
+        color: #94a3b8;
+        font-size: 0.9rem;
+        margin-bottom: 8px;
+    }
+    .metric-score {
+        color: #64748b;
+        font-size: 0.85rem;
+        margin-top: 4px;
+    }
+    /* Fixed signal colors - high contrast */
+    .signal-strong-buy { 
+        color: #22c55e !important; 
+        font-weight: bold; 
+        font-size: 1.5rem;
+        text-shadow: 0 0 10px rgba(34, 197, 94, 0.5);
+    }
+    .signal-buy { 
+        color: #4ade80 !important; 
+        font-weight: bold; 
+        font-size: 1.5rem;
+        text-shadow: 0 0 10px rgba(74, 222, 128, 0.5);
+    }
+    .signal-hold { 
+        color: #fbbf24 !important; 
+        font-weight: bold; 
+        font-size: 1.5rem;
+        text-shadow: 0 0 10px rgba(251, 191, 36, 0.5);
+    }
+    .signal-sell { 
+        color: #fb923c !important; 
+        font-weight: bold; 
+        font-size: 1.5rem;
+        text-shadow: 0 0 10px rgba(251, 146, 60, 0.5);
+    }
+    .signal-strong-sell { 
+        color: #ef4444 !important; 
+        font-weight: bold; 
+        font-size: 1.5rem;
+        text-shadow: 0 0 10px rgba(239, 68, 68, 0.5);
+    }
+    .signal-na {
+        color: #94a3b8 !important;
+        font-weight: bold;
+        font-size: 1.3rem;
+    }
 </style>
 """, unsafe_allow_html=True)
 
-# Initialize session state
+
+def get_signal_class(signal: str) -> str:
+    """Get CSS class for signal."""
+    if not signal or signal == 'N/A':
+        return 'signal-na'
+    return f"signal-{signal.lower().replace('_', '-')}"
+
 if 'rag' not in st.session_state:
     with st.spinner("🔄 Initializing RAG system..."):
-        st.session_state.rag = EnhancedRAG()
+        try:
+            st.session_state.rag = EnhancedRAG()
+        except Exception as e:
+            st.session_state.rag = None
 
 if 'anomaly_detector' not in st.session_state:
     st.session_state.anomaly_detector = AnomalyDetector()
@@ -71,7 +120,10 @@ if 'chat_history' not in st.session_state:
 if 'selected_ticker' not in st.session_state:
     st.session_state.selected_ticker = 'AAPL'
 
-# Helper functions
+if 'current_page' not in st.session_state:
+    st.session_state.current_page = "🏠 Dashboard"
+
+
 def load_and_save_sentiment(ticker: str):
     """Load sentiment from JSON and save to database."""
     sentiment_files = list(Path("data/sentiment").glob(f"{ticker}_*_sentiment.json"))
@@ -85,7 +137,6 @@ def load_and_save_sentiment(ticker: str):
     
     filing_date = latest_file.stem.split('_')[1]
     
-    # Save to database (upsert - won't duplicate)
     if st.session_state.db.client:
         st.session_state.db.insert_sentiment(ticker, filing_date, sentiment_data)
     
@@ -127,29 +178,32 @@ with st.sidebar:
     
     st.markdown("---")
     
-    # Navigation
     st.markdown("### 📁 Navigation")
     page = st.radio(
         "Go to",
         ["🏠 Dashboard", "💬 RAG Chat", "🚨 Anomalies", "📊 Analytics", "📥 Data Management"],
-        label_visibility="collapsed"
+        index=["🏠 Dashboard", "💬 RAG Chat", "🚨 Anomalies", "📊 Analytics", "📥 Data Management"].index(st.session_state.current_page),
+        label_visibility="collapsed",
+        key="nav_radio"
     )
+    
+    # Update current page state
+    st.session_state.current_page = page
     
     st.markdown("---")
     
-    # Actions
     st.markdown("### ⚙️ Actions")
     if st.button("🔄 Refresh Data", use_container_width=True):
         st.rerun()
     
     if st.button("🗑️ Clear Chat History", use_container_width=True):
         st.session_state.chat_history = []
-        st.session_state.rag.reset_conversation()
+        if st.session_state.rag:
+            st.session_state.rag.reset_conversation()
         st.success("Chat history cleared!")
     
     st.markdown("---")
     
-    # Database status
     st.markdown("### 🗄️ Database")
     if st.session_state.db.client:
         st.success("✓ Connected")
@@ -169,22 +223,17 @@ with st.sidebar:
     - 🗄️ Supabase Database
     """)
 
-# ============================================================================
 # PAGE: DASHBOARD
-# ============================================================================
-
 if page == "🏠 Dashboard":
     st.markdown(f'<h1 class="main-header">🎯 AlphaExtract</h1>', unsafe_allow_html=True)
     st.markdown(f"### AI-Powered Intelligence for {companies[selected_ticker]}")
     
-    # Load sentiment and save to DB
     sentiment_data, filing_date = load_and_save_sentiment(selected_ticker)
     
     if not sentiment_data:
         st.error(f"No sentiment data found for {selected_ticker}.")
         st.info("💡 Go to **📥 Data Management** to download and process filings.")
     else:
-        # Key Metrics Row
         st.markdown("---")
         col1, col2, col3, col4 = st.columns(4)
         
@@ -192,51 +241,53 @@ if page == "🏠 Dashboard":
         overall_signal = sentiment_data['overall']['signal']
         
         with col1:
-            signal_class = f"signal-{overall_signal.lower().replace('_', '-')}"
+            signal_class = get_signal_class(overall_signal)
             st.markdown(f"""
             <div class="metric-card">
-                <div style="color: #64748b; font-size: 0.9rem;">Overall Signal</div>
+                <div class="metric-label">Overall Signal</div>
                 <div class="{signal_class}">{overall_signal}</div>
-                <div style="color: #94a3b8; font-size: 0.8rem;">Score: {overall_score:+.3f}</div>
+                <div class="metric-score">Score: {overall_score:+.3f}</div>
             </div>
             """, unsafe_allow_html=True)
         
         with col2:
             risk_score = sentiment_data['sections'].get('item_1a', {}).get('scores', {}).get('compound', 0)
             risk_signal = sentiment_data['sections'].get('item_1a', {}).get('signal', 'N/A')
+            signal_class = get_signal_class(risk_signal)
             st.markdown(f"""
             <div class="metric-card">
-                <div style="color: #64748b; font-size: 0.9rem;">Risk Factors</div>
-                <div style="font-size: 1.3rem; font-weight: bold;">{risk_signal}</div>
-                <div style="color: #94a3b8; font-size: 0.8rem;">Score: {risk_score:+.3f}</div>
+                <div class="metric-label">Risk Factors</div>
+                <div class="{signal_class}">{risk_signal}</div>
+                <div class="metric-score">Score: {risk_score:+.3f}</div>
             </div>
             """, unsafe_allow_html=True)
         
         with col3:
             mda_score = sentiment_data['sections'].get('item_7', {}).get('scores', {}).get('compound', 0)
             mda_signal = sentiment_data['sections'].get('item_7', {}).get('signal', 'N/A')
+            signal_class = get_signal_class(mda_signal)
             st.markdown(f"""
             <div class="metric-card">
-                <div style="color: #64748b; font-size: 0.9rem;">MD&A</div>
-                <div style="font-size: 1.3rem; font-weight: bold;">{mda_signal}</div>
-                <div style="color: #94a3b8; font-size: 0.8rem;">Score: {mda_score:+.3f}</div>
+                <div class="metric-label">MD&A</div>
+                <div class="{signal_class}">{mda_signal}</div>
+                <div class="metric-score">Score: {mda_score:+.3f}</div>
             </div>
             """, unsafe_allow_html=True)
         
         with col4:
             fin_score = sentiment_data['sections'].get('item_8', {}).get('scores', {}).get('compound', 0)
             fin_signal = sentiment_data['sections'].get('item_8', {}).get('signal', 'N/A')
+            signal_class = get_signal_class(fin_signal)
             st.markdown(f"""
             <div class="metric-card">
-                <div style="color: #64748b; font-size: 0.9rem;">Financials</div>
-                <div style="font-size: 1.3rem; font-weight: bold;">{fin_signal}</div>
-                <div style="color: #94a3b8; font-size: 0.8rem;">Score: {fin_score:+.3f}</div>
+                <div class="metric-label">Financials</div>
+                <div class="{signal_class}">{fin_signal}</div>
+                <div class="metric-score">Score: {fin_score:+.3f}</div>
             </div>
             """, unsafe_allow_html=True)
         
         st.markdown("---")
         
-        # Charts Row
         col_left, col_right = st.columns(2)
         
         with col_left:
@@ -271,7 +322,6 @@ if page == "🏠 Dashboard":
         with col_right:
             st.markdown("#### 📈 Historical Sentiment Trend")
             
-            # Get historical data from database
             history = get_sentiment_history(selected_ticker)
             
             if history and len(history) > 1:
@@ -302,7 +352,6 @@ if page == "🏠 Dashboard":
             else:
                 st.info("Need multiple filings for historical trend. Download more in Data Management!")
         
-        # Filing Info
         st.markdown("---")
         st.markdown("#### 📄 Filing Information")
         
@@ -324,17 +373,13 @@ if page == "🏠 Dashboard":
             else:
                 st.metric("Database", "✗ Not saved")
 
-# ============================================================================
 # PAGE: RAG CHAT
-# ============================================================================
-
 elif page == "💬 RAG Chat":
     st.markdown(f'<h1 class="main-header">💬 RAG Chat</h1>', unsafe_allow_html=True)
     st.markdown(f"### Ask questions about {companies[selected_ticker]}'s 10-K filing")
     
     st.markdown("---")
     
-    # Display chat history
     for message in st.session_state.chat_history:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
@@ -347,15 +392,12 @@ elif page == "💬 RAG Chat":
                         **Preview:** {source['preview']}
                         """)
     
-    # Chat input
     if prompt := st.chat_input("Ask a question about the 10-K filing..."):
-        # Add user message
         st.session_state.chat_history.append({"role": "user", "content": prompt})
         
         with st.chat_message("user"):
             st.markdown(prompt)
         
-        # Generate response
         with st.chat_message("assistant"):
             with st.spinner("🤔 Thinking..."):
                 response = st.session_state.rag.query(
@@ -367,7 +409,6 @@ elif page == "💬 RAG Chat":
                 
                 st.markdown(response['answer'])
                 
-                # Log to database
                 if st.session_state.db.client:
                     st.session_state.db.log_chat_query(
                         ticker=selected_ticker,
@@ -376,7 +417,6 @@ elif page == "💬 RAG Chat":
                         num_sources=len(response['sources'])
                     )
                 
-                # Show sources
                 if response['sources']:
                     with st.expander("📚 View Sources"):
                         for i, source in enumerate(response['sources'], 1):
@@ -386,38 +426,32 @@ elif page == "💬 RAG Chat":
                             **Preview:** {source['preview']}
                             """)
                 
-                # Add to history
                 st.session_state.chat_history.append({
                     "role": "assistant",
                     "content": response['answer'],
                     "sources": response['sources']
                 })
 
-# ============================================================================
 # PAGE: ANOMALIES
-# ============================================================================
-
 elif page == "🚨 Anomalies":
     st.markdown(f'<h1 class="main-header">🚨 Anomaly Detection</h1>', unsafe_allow_html=True)
     st.markdown(f"### Unusual patterns in {companies[selected_ticker]}'s filings")
     
-    # Check filing count
     filing_count = count_available_filings(selected_ticker)
     
-    # Load anomaly data from local files first
     anomaly_files = list(Path("data/anomalies").glob(f"{selected_ticker}_*_anomalies.json"))
     
     if not anomaly_files:
         if filing_count < 2:
-            # Smart download prompt
             st.warning(f"⚠️ Limited Data for {selected_ticker}")
             st.info(f"Only {filing_count} filing(s) available. Need 2+ for anomaly detection.")
             
             col1, col2 = st.columns(2)
             
             with col1:
+                # Fixed: Actually navigate to Data Management
                 if st.button("📥 Go to Data Management", use_container_width=True, type="primary"):
-                    st.session_state.page = "📥 Data Management"
+                    st.session_state.current_page = "📥 Data Management"
                     st.rerun()
             
             with col2:
@@ -430,13 +464,13 @@ elif page == "🚨 Anomalies":
                 with st.spinner("Analyzing..."):
                     report = st.session_state.anomaly_detector.analyze_ticker(selected_ticker)
                     
-                    # Check if analysis was successful
+                    # Fixed: Check if analysis was successful
                     if 'error' in report:
                         st.error(f"Analysis failed: {report['error']}")
+                        st.info("💡 Tip: You need at least 2 filings to detect anomalies. Download more filings for this company.")
                     else:
                         st.session_state.anomaly_detector.save_report(report)
                         
-                        # Save to database
                         if st.session_state.db.client and report.get('anomalies'):
                             st.session_state.db.insert_anomalies(
                                 ticker=selected_ticker,
@@ -451,16 +485,9 @@ elif page == "🚨 Anomalies":
         with open(latest_file, 'r') as f:
             anomaly_data = json.load(f)
         
-        # Save to database
-        if st.session_state.db.client and anomaly_data.get('anomalies'):
-            st.session_state.db.insert_anomalies(
-                ticker=selected_ticker,
-                filing_date=anomaly_data['current_filing_date'],
-                anomalies=anomaly_data['anomalies']
-            )
+        # DON'T re-insert to database here - it causes duplicates on every page load!
         
-        # Summary metrics
-        col1, col2, col3 = st.columns(3)
+        col1, col2, col3, col4 = st.columns(4)
         
         with col1:
             st.metric("Total Anomalies", anomaly_data['total_anomalies'])
@@ -471,9 +498,11 @@ elif page == "🚨 Anomalies":
         with col3:
             st.metric("Medium Severity", anomaly_data['anomalies_by_severity']['medium'])
         
+        with col4:
+            st.metric("Compared To", f"{anomaly_data.get('num_historical_filings', 'N/A')} prior filings")
+        
         st.markdown("---")
         
-        # Group by type
         anomalies_by_type = {}
         for anomaly in anomaly_data['anomalies']:
             atype = anomaly['type']
@@ -481,21 +510,46 @@ elif page == "🚨 Anomalies":
                 anomalies_by_type[atype] = []
             anomalies_by_type[atype].append(anomaly)
         
-        # Display
         for atype, anomalies in anomalies_by_type.items():
             st.markdown(f"### {atype.replace('_', ' ').title()}")
             
             for anomaly in anomalies:
                 severity = anomaly.get('severity', 'medium')
-                icon = '🔴' if severity == 'high' else '🟡'
+                icon = '🔴' if severity == 'high' else '🟡' if severity == 'medium' else '🟢'
                 
-                with st.expander(f"{icon} {anomaly['description']}"):
-                    st.json(anomaly)
+                with st.expander(f"{icon} {anomaly['description']}", expanded=True):
+                    col_a, col_b = st.columns([2, 1])
+                    
+                    with col_a:
+                        st.markdown(f"**Type:** {anomaly['type'].replace('_', ' ').title()}")
+                        st.markdown(f"**Severity:** {severity.upper()}")
+                        
+                        # Show context if available
+                        if 'context_snippets' in anomaly and anomaly['context_snippets']:
+                            st.markdown("**📄 Context from Filing:**")
+                            for snippet in anomaly['context_snippets'][:3]:
+                                st.info(f"_{snippet}_")
+                        
+                        if 'comparison_details' in anomaly:
+                            st.markdown("**📊 Comparison:**")
+                            st.markdown(anomaly['comparison_details'])
+                        
+                        if 'historical_years' in anomaly:
+                            st.markdown(f"**📅 Historical Years:** {', '.join(anomaly['historical_years'])}")
+                    
+                    with col_b:
+                        if 'current_count' in anomaly:
+                            st.metric("Current", anomaly['current_count'])
+                        if 'average_count' in anomaly:
+                            st.metric("Hist. Avg", f"{anomaly['average_count']:.1f}")
+                        if 'ratio' in anomaly:
+                            change = "↑" if anomaly['ratio'] > 1 else "↓"
+                            st.metric("Change", f"{anomaly['ratio']:.1f}x {change}")
+                    
+                    with st.expander("📋 Raw Data", expanded=False):
+                        st.json(anomaly)
 
-# ============================================================================
 # PAGE: ANALYTICS
-# ============================================================================
-
 elif page == "📊 Analytics":
     st.markdown(f'<h1 class="main-header">📊 Analytics</h1>', unsafe_allow_html=True)
     st.markdown("### Usage Statistics & Insights")
@@ -505,7 +559,6 @@ elif page == "📊 Analytics":
     else:
         st.markdown("---")
         
-        # Get analytics data
         col1, col2 = st.columns(2)
         
         with col1:
@@ -524,20 +577,30 @@ elif page == "📊 Analytics":
         
         st.markdown("---")
         
-        st.markdown("#### 🚨 High Severity Anomalies Across All Companies")
-        high_severity = st.session_state.db.get_anomalies(severity='high', limit=10)
+        st.markdown("#### 🚨 High Severity Anomalies (Deduplicated)")
+        high_severity = st.session_state.db.get_anomalies(severity='high', limit=50)
         
         if high_severity:
-            df = pd.DataFrame(high_severity)
-            df = df[['ticker', 'filing_date', 'anomaly_type', 'description']]
-            st.dataframe(df, use_container_width=True)
+            # Deduplicate by ticker + filing_date + anomaly_type + description
+            seen = set()
+            unique_anomalies = []
+            for a in high_severity:
+                key = (a.get('ticker', ''), a.get('filing_date', ''), a.get('anomaly_type', ''), a.get('description', ''))
+                if key not in seen:
+                    seen.add(key)
+                    unique_anomalies.append(a)
+            
+            if unique_anomalies:
+                df = pd.DataFrame(unique_anomalies[:10])
+                display_cols = ['ticker', 'filing_date', 'anomaly_type', 'description']
+                display_cols = [c for c in display_cols if c in df.columns]
+                st.dataframe(df[display_cols], use_container_width=True, hide_index=True)
+            else:
+                st.info("No unique high severity anomalies found")
         else:
             st.info("No high severity anomalies detected yet")
 
-# ============================================================================
 # PAGE: DATA MANAGEMENT
-# ============================================================================
-
 elif page == "📥 Data Management":
     from automated_pipeline import render_data_management_page
     render_data_management_page(companies, selected_ticker)

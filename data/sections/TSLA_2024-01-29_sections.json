@@ -1,0 +1,26 @@
+{
+  "ticker": "TSLA",
+  "filing_date": "2024-01-29",
+  "sections_found": [
+    "item_1a",
+    "item_7",
+    "item_8"
+  ],
+  "section_stats": {
+    "item_1a": {
+      "chars": 79836,
+      "words": 12067,
+      "lines": 35
+    },
+    "item_7": {
+      "chars": 76275,
+      "words": 10138,
+      "lines": 63
+    },
+    "item_8": {
+      "chars": 294259,
+      "words": 34574,
+      "lines": 377
+    }
+  }
+}

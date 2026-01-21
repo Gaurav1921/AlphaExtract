@@ -1,0 +1,522 @@
+{
+  "ticker": "TSLA",
+  "filing_date": "2023-01-31",
+  "parse_time": 8.824229,
+  "tables": {
+    "count": 100,
+    "summary": [
+      {
+        "index": 0,
+        "rows": 2,
+        "cols": 2
+      },
+      {
+        "index": 1,
+        "rows": 2,
+        "cols": 2
+      },
+      {
+        "index": 2,
+        "rows": 3,
+        "cols": 3
+      },
+      {
+        "index": 3,
+        "rows": 3,
+        "cols": 3
+      },
+      {
+        "index": 4,
+        "rows": 3,
+        "cols": 3
+      },
+      {
+        "index": 5,
+        "rows": 3,
+        "cols": 1
+      },
+      {
+        "index": 6,
+        "rows": 6,
+        "cols": 9
+      },
+      {
+        "index": 7,
+        "rows": 37,
+        "cols": 5
+      },
+      {
+        "index": 8,
+        "rows": 9,
+        "cols": 5
+      },
+      {
+        "index": 9,
+        "rows": 2,
+        "cols": 1
+      },
+      {
+        "index": 10,
+        "rows": 11,
+        "cols": 5
+      },
+      {
+        "index": 11,
+        "rows": 11,
+        "cols": 29
+      },
+      {
+        "index": 12,
+        "rows": 23,
+        "cols": 29
+      },
+      {
+        "index": 13,
+        "rows": 5,
+        "cols": 29
+      },
+      {
+        "index": 14,
+        "rows": 5,
+        "cols": 29
+      },
+      {
+        "index": 15,
+        "rows": 4,
+        "cols": 25
+      },
+      {
+        "index": 16,
+        "rows": 4,
+        "cols": 29
+      },
+      {
+        "index": 17,
+        "rows": 4,
+        "cols": 29
+      },
+      {
+        "index": 18,
+        "rows": 4,
+        "cols": 25
+      },
+      {
+        "index": 19,
+        "rows": 5,
+        "cols": 29
+      },
+      {
+        "index": 20,
+        "rows": 4,
+        "cols": 29
+      },
+      {
+        "index": 21,
+        "rows": 6,
+        "cols": 13
+      },
+      {
+        "index": 22,
+        "rows": 9,
+        "cols": 3
+      },
+      {
+        "index": 23,
+        "rows": 44,
+        "cols": 9
+      },
+      {
+        "index": 24,
+        "rows": 40,
+        "cols": 13
+      },
+      {
+        "index": 25,
+        "rows": 10,
+        "cols": 13
+      },
+      {
+        "index": 26,
+        "rows": 38,
+        "cols": 38
+      },
+      {
+        "index": 27,
+        "rows": 55,
+        "cols": 13
+      },
+      {
+        "index": 28,
+        "rows": 11,
+        "cols": 13
+      },
+      {
+        "index": 29,
+        "rows": 8,
+        "cols": 9
+      },
+      {
+        "index": 30,
+        "rows": 8,
+        "cols": 13
+      },
+      {
+        "index": 31,
+        "rows": 9,
+        "cols": 13
+      },
+      {
+        "index": 32,
+        "rows": 5,
+        "cols": 13
+      },
+      {
+        "index": 33,
+        "rows": 7,
+        "cols": 13
+      },
+      {
+        "index": 34,
+        "rows": 3,
+        "cols": 5
+      },
+      {
+        "index": 35,
+        "rows": 5,
+        "cols": 5
+      },
+      {
+        "index": 36,
+        "rows": 8,
+        "cols": 13
+      },
+      {
+        "index": 37,
+        "rows": 12,
+        "cols": 13
+      },
+      {
+        "index": 38,
+        "rows": 9,
+        "cols": 33
+      },
+      {
+        "index": 39,
+        "rows": 9,
+        "cols": 25
+      },
+      {
+        "index": 40,
+        "rows": 7,
+        "cols": 25
+      },
+      {
+        "index": 41,
+        "rows": 5,
+        "cols": 5
+      },
+      {
+        "index": 42,
+        "rows": 4,
+        "cols": 17
+      },
+      {
+        "index": 43,
+        "rows": 8,
+        "cols": 9
+      },
+      {
+        "index": 44,
+        "rows": 11,
+        "cols": 9
+      },
+      {
+        "index": 45,
+        "rows": 12,
+        "cols": 9
+      },
+      {
+        "index": 46,
+        "rows": 11,
+        "cols": 9
+      },
+      {
+        "index": 47,
+        "rows": 9,
+        "cols": 9
+      },
+      {
+        "index": 48,
+        "rows": 18,
+        "cols": 30
+      },
+      {
+        "index": 49,
+        "rows": 20,
+        "cols": 30
+      },
+      {
+        "index": 50,
+        "rows": 9,
+        "cols": 13
+      },
+      {
+        "index": 51,
+        "rows": 17,
+        "cols": 9
+      },
+      {
+        "index": 52,
+        "rows": 12,
+        "cols": 13
+      },
+      {
+        "index": 53,
+        "rows": 9,
+        "cols": 9
+      },
+      {
+        "index": 54,
+        "rows": 9,
+        "cols": 13
+      },
+      {
+        "index": 55,
+        "rows": 14,
+        "cols": 9
+      },
+      {
+        "index": 56,
+        "rows": 10,
+        "cols": 9
+      },
+      {
+        "index": 57,
+        "rows": 11,
+        "cols": 9
+      },
+      {
+        "index": 58,
+        "rows": 8,
+        "cols": 5
+      },
+      {
+        "index": 59,
+        "rows": 14,
+        "cols": 25
+      },
+      {
+        "index": 60,
+        "rows": 8,
+        "cols": 13
+      },
+      {
+        "index": 61,
+        "rows": 11,
+        "cols": 11
+      },
+      {
+        "index": 62,
+        "rows": 7,
+        "cols": 13
+      },
+      {
+        "index": 63,
+        "rows": 7,
+        "cols": 13
+      },
+      {
+        "index": 64,
+        "rows": 14,
+        "cols": 13
+      },
+      {
+        "index": 65,
+        "rows": 25,
+        "cols": 9
+      },
+      {
+        "index": 66,
+        "rows": 15,
+        "cols": 13
+      },
+      {
+        "index": 67,
+        "rows": 15,
+        "cols": 5
+      },
+      {
+        "index": 68,
+        "rows": 22,
+        "cols": 9
+      },
+      {
+        "index": 69,
+        "rows": 9,
+        "cols": 13
+      },
+      {
+        "index": 70,
+        "rows": 7,
+        "cols": 13
+      },
+      {
+        "index": 71,
+        "rows": 8,
+        "cols": 9
+      },
+      {
+        "index": 72,
+        "rows": 6,
+        "cols": 9
+      },
+      {
+        "index": 73,
+        "rows": 27,
+        "cols": 13
+      },
+      {
+        "index": 74,
+        "rows": 3,
+        "cols": 13
+      },
+      {
+        "index": 75,
+        "rows": 20,
+        "cols": 13
+      },
+      {
+        "index": 76,
+        "rows": 3,
+        "cols": 13
+      },
+      {
+        "index": 77,
+        "rows": 25,
+        "cols": 13
+      },
+      {
+        "index": 78,
+        "rows": 3,
+        "cols": 13
+      },
+      {
+        "index": 79,
+        "rows": 25,
+        "cols": 13
+      },
+      {
+        "index": 80,
+        "rows": 3,
+        "cols": 13
+      },
+      {
+        "index": 81,
+        "rows": 25,
+        "cols": 13
+      },
+      {
+        "index": 82,
+        "rows": 3,
+        "cols": 13
+      },
+      {
+        "index": 83,
+        "rows": 21,
+        "cols": 13
+      },
+      {
+        "index": 84,
+        "rows": 3,
+        "cols": 13
+      },
+      {
+        "index": 85,
+        "rows": 23,
+        "cols": 13
+      },
+      {
+        "index": 86,
+        "rows": 3,
+        "cols": 13
+      },
+      {
+        "index": 87,
+        "rows": 43,
+        "cols": 13
+      },
+      {
+        "index": 88,
+        "rows": 3,
+        "cols": 13
+      },
+      {
+        "index": 89,
+        "rows": 25,
+        "cols": 13
+      },
+      {
+        "index": 90,
+        "rows": 3,
+        "cols": 13
+      },
+      {
+        "index": 91,
+        "rows": 17,
+        "cols": 13
+      },
+      {
+        "index": 92,
+        "rows": 3,
+        "cols": 13
+      },
+      {
+        "index": 93,
+        "rows": 13,
+        "cols": 13
+      },
+      {
+        "index": 94,
+        "rows": 15,
+        "cols": 13
+      },
+      {
+        "index": 95,
+        "rows": 15,
+        "cols": 13
+      },
+      {
+        "index": 96,
+        "rows": 3,
+        "cols": 13
+      },
+      {
+        "index": 97,
+        "rows": 25,
+        "cols": 13
+      },
+      {
+        "index": 98,
+        "rows": 7,
+        "cols": 3
+      },
+      {
+        "index": 99,
+        "rows": 32,
+        "cols": 5
+      }
+    ]
+  },
+  "metadata": {
+    "total_chars": 798689,
+    "total_words": 85785,
+    "extraction_date": "2026-01-22T01:53:30.563678"
+  },
+  "sections": {
+    "metadata": {
+      "total_chars": 798689,
+      "total_words": 85785,
+      "extraction_date": "2026-01-22T01:53:30.563678"
+    }
+  }
+}

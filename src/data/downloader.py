@@ -19,7 +19,6 @@ from datetime import datetime
 from typing import Optional
 import json
 
-# Setup logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -46,7 +45,7 @@ class SECDownloader:
             email: Your email (SEC requirement for identification)
         """
         self.base_url = "https://www.sec.gov"
-        self.data_url = "https://data.sec.gov"  # For API endpoints
+        self.data_url = "https://data.sec.gov"
         self.headers = {
             "User-Agent": f"AlphaExtract/1.0 ({email})",
             "Accept-Encoding": "gzip, deflate"
@@ -54,7 +53,6 @@ class SECDownloader:
         self.session = requests.Session()
         self.session.headers.update(self.headers)
         
-        # Create directories
         self.raw_dir = Path("data/raw")
         self.raw_dir.mkdir(parents=True, exist_ok=True)
     
@@ -72,17 +70,14 @@ class SECDownloader:
             CIK number as string, or None if not found
         """
         try:
-            # Try the Exchange API endpoint (more reliable)
             url = "https://www.sec.gov/files/company_tickers_exchange.json"
             response = requests.get(url, headers=self.headers, timeout=10)
             response.raise_for_status()
             
             data = response.json()
             
-            # Format: {"fields": [...], "data": [[cik, name, ticker, exchange], ...]}
             if 'data' in data:
                 for row in data['data']:
-                    # row = [cik, company_name, ticker, exchange]
                     if len(row) >= 3 and row[2].upper() == ticker.upper():
                         cik = str(row[0]).zfill(10)
                         logger.info(f"Found CIK {cik} for ticker {ticker}")
@@ -90,7 +85,6 @@ class SECDownloader:
             
             logger.warning(f"Ticker {ticker} not found in primary API, trying fallback...")
             
-            # Fallback: Try the older company_tickers.json format
             fallback_url = "https://www.sec.gov/files/company_tickers.json"
             response = requests.get(fallback_url, headers=self.headers, timeout=10)
             response.raise_for_status()
@@ -121,8 +115,6 @@ class SECDownloader:
             Dict with filing metadata or None if not found
         """
         try:
-            # SEC's submissions endpoint returns ALL filings for a company
-            # Use data.sec.gov for API calls
             url = f"{self.data_url}/submissions/CIK{cik}.json"
             response = self.session.get(url, timeout=10)
             response.raise_for_status()
@@ -130,24 +122,19 @@ class SECDownloader:
             data = response.json()
             filings = data['filings']['recent']
             
-            # Find the first 10-K (not 10-K/A which is an amendment)
             for i, form in enumerate(filings['form']):
                 if form == '10-K':
                     accession = filings['accessionNumber'][i].replace('-', '')
                     filing_date = filings['filingDate'][i]
                     primary_doc = filings['primaryDocument'][i]
                     
-                    # Remove leading zeros from CIK for URL (SEC uses trimmed CIK in paths)
                     cik_trimmed = cik.lstrip('0')
                     
-                    # Construct TWO URLs:
-                    # 1. Raw HTML for programmatic download (what we actually download)
                     download_url = (
                         f"{self.base_url}/Archives/edgar/data/"
                         f"{cik_trimmed}/{accession}/{primary_doc}"
                     )
                     
-                    # 2. Interactive viewer (for user reference, saved in metadata)
                     viewer_url = (
                         f"{self.base_url}/ix?doc=/Archives/edgar/data/"
                         f"{cik_trimmed}/{accession}/{primary_doc}"
@@ -157,19 +144,12 @@ class SECDownloader:
                     logger.info(f"Download URL: {download_url}")
                     
                     return {
-                        'url': download_url,  # Use raw URL for download
-                        'viewer_url': viewer_url,  # Save for reference
+                        'url': download_url,
+                        'viewer_url': viewer_url,
                         'filing_date': filing_date,
                         'accession': accession,
                         'document': primary_doc
                     }
-            
-            logger.error(f"No 10-K found for CIK {cik}")
-            return None
-            
-        except Exception as e:
-            logger.error(f"Failed to get 10-K URL for CIK {cik}: {e}")
-            return None
             
             logger.error(f"No 10-K found for CIK {cik}")
             return None
@@ -197,17 +177,14 @@ class SECDownloader:
         """
         logger.info(f"Starting download for {ticker}")
         
-        # Step 1: Get CIK
         cik = self.get_cik(ticker)
         if not cik:
             return None
         
-        # Step 2: Get 10-K URL
         filing_info = self.get_latest_10k_url(cik)
         if not filing_info:
             return None
         
-        # Step 3: Download with retries
         url = filing_info['url']
         filing_date = filing_info['filing_date']
         
@@ -215,32 +192,28 @@ class SECDownloader:
             try:
                 logger.info(f"Downloading from {url} (attempt {attempt}/{max_retries})")
                 
-                # SEC rate limit: 10 requests/second max
                 time.sleep(0.1)
                 
                 response = self.session.get(url, timeout=30)
                 response.raise_for_status()
                 
-                # Determine file extension from Content-Type or URL
                 content_type = response.headers.get('Content-Type', '')
                 if 'html' in content_type or url.endswith('.htm'):
                     ext = 'html'
                 else:
                     ext = 'txt'
                 
-                # Save file
                 filename = f"{ticker}_10K_{filing_date}.{ext}"
                 filepath = self.raw_dir / filename
                 
                 filepath.write_bytes(response.content)
-                file_size = len(response.content) / 1024  # KB
+                file_size = len(response.content) / 1024
                 
                 logger.info(
                     f"✓ Successfully downloaded {ticker} 10-K "
                     f"({file_size:.1f} KB) → {filepath}"
                 )
                 
-                # Save metadata for later use
                 metadata = {
                     'ticker': ticker,
                     'cik': cik,
@@ -301,7 +274,6 @@ class SECDownloader:
             else:
                 results['failed'].append(ticker)
             
-            # Be nice to SEC servers
             time.sleep(0.1)
         
         logger.info(
@@ -313,19 +285,13 @@ class SECDownloader:
         return results
 
 
-# ============================================================================
-# TESTING CODE - Run this file directly to test
-# ============================================================================
-
 if __name__ == "__main__":
     print("=" * 70)
     print("SEC EDGAR Downloader - Test Suite")
     print("=" * 70)
     
-    # Initialize downloader
     downloader = SECDownloader(email="your.email@example.com")
     
-    # Test 1: Single company download
     print("\n[TEST 1] Downloading Tesla (TSLA) 10-K...")
     tesla_path = downloader.download_filing("TSLA")
     
@@ -335,7 +301,6 @@ if __name__ == "__main__":
     else:
         print("✗ Failed to download")
     
-    # Test 2: Batch download
     print("\n[TEST 2] Downloading multiple companies...")
     test_tickers = ["AAPL", "MSFT", "GOOGL"]
     results = downloader.download_multiple(test_tickers)

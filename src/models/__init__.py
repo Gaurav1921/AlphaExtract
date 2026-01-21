@@ -1,3 +1,6 @@
-"""ML models"""
-# Note: Import class names as they appear in actual files
-__all__ = []
+"""ML models for AlphaExtract"""
+from .sentiment import FinBERTAnalyzer
+from .anomaly import AnomalyDetector
+from .embeddings import EmbeddingPipeline
+
+__all__ = ['FinBERTAnalyzer', 'AnomalyDetector', 'EmbeddingPipeline']

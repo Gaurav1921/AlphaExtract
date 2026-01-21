@@ -1,0 +1,30 @@
+{
+  "ticker": "MSFT",
+  "sections": {
+    "1a": {
+      "scores": {
+        "compound": 0.39905048683285715
+      },
+      "signal": "BUY",
+      "word_count": 10104
+    },
+    "7": {
+      "scores": {
+        "compound": 0.01777268946170807
+      },
+      "signal": "HOLD",
+      "word_count": 8501
+    },
+    "8": {
+      "scores": {
+        "compound": 0.7821930082514882
+      },
+      "signal": "STRONG_BUY",
+      "word_count": 18259
+    }
+  },
+  "overall": {
+    "compound": 0.3996720615153511,
+    "signal": "BUY"
+  }
+}

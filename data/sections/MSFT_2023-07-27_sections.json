@@ -1,0 +1,26 @@
+{
+  "ticker": "MSFT",
+  "filing_date": "2023-07-27",
+  "sections_found": [
+    "item_1a",
+    "item_7",
+    "item_8"
+  ],
+  "section_stats": {
+    "item_1a": {
+      "chars": 68679,
+      "words": 10104,
+      "lines": 281
+    },
+    "item_7": {
+      "chars": 60385,
+      "words": 8501,
+      "lines": 481
+    },
+    "item_8": {
+      "chars": 137833,
+      "words": 18259,
+      "lines": 975
+    }
+  }
+}

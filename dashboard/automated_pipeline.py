@@ -1,7 +1,8 @@
 """
-Automated Data Management with Full Pipeline
---------------------------------------------
-Complete automated workflow - user clicks, system does everything.
+Automated Data Management with Full Pipeline (Dashboard Version)
+-----------------------------------------------------------------
+Complete automated workflow for the Streamlit dashboard.
+Uses the proper class-based API from src modules.
 """
 
 import streamlit as st
@@ -15,13 +16,14 @@ import time
 sys.path.append(str(Path(__file__).parent.parent))
 
 from src.data.downloader import SECDownloader
+from src.data.parser import TenKParser
+from src.data.splitter import SectionSplitter
 from src.models.anomaly import AnomalyDetector
 
 
 def get_filing_status(ticker: str) -> dict:
     """Get complete status of all filings for a ticker."""
     
-    # Downloaded raw files
     raw_files = list(Path("data/raw").glob(f"{ticker}_10K_*.html")) + \
                 list(Path("data/raw").glob(f"{ticker}_10K_*.txt"))
     
@@ -29,9 +31,8 @@ def get_filing_status(ticker: str) -> dict:
     for f in raw_files:
         parts = f.stem.split('_')
         if len(parts) >= 3:
-            raw_dates.add(parts[2])  # Date part
+            raw_dates.add(parts[2])
     
-    # Processed files
     processed_files = list(Path("data/processed").glob(f"{ticker}_*.md"))
     processed_dates = set()
     for f in processed_files:
@@ -39,7 +40,6 @@ def get_filing_status(ticker: str) -> dict:
         if len(parts) >= 2:
             processed_dates.add(parts[1])
     
-    # Section files
     section_files = list(Path("data/sections").glob(f"{ticker}_*_item_*.txt"))
     section_dates = set()
     for f in section_files:
@@ -47,7 +47,6 @@ def get_filing_status(ticker: str) -> dict:
         if len(parts) >= 2:
             section_dates.add(parts[1])
     
-    # Sentiment files
     sentiment_files = list(Path("data/sentiment").glob(f"{ticker}_*_sentiment.json"))
     sentiment_dates = set()
     for f in sentiment_files:
@@ -55,7 +54,6 @@ def get_filing_status(ticker: str) -> dict:
         if len(parts) >= 2:
             sentiment_dates.add(parts[1])
     
-    # Combine all dates
     all_dates = raw_dates | processed_dates | section_dates | sentiment_dates
     
     status_by_date = {}
@@ -65,7 +63,7 @@ def get_filing_status(ticker: str) -> dict:
             'parsed': date in processed_dates,
             'sections': date in section_dates,
             'sentiment': date in sentiment_dates,
-            'complete': date in sentiment_dates  # Sentiment is final step
+            'complete': date in sentiment_dates
         }
     
     return status_by_date
@@ -74,9 +72,6 @@ def get_filing_status(ticker: str) -> dict:
 def download_filing(ticker: str, filing_date: str, progress_callback=None):
     """Download a single filing."""
     downloader = SECDownloader()
-    
-    # This is simplified - actual implementation would fetch specific filing
-    # For now, we'll download latest
     result = downloader.download_filing(ticker)
     
     if progress_callback:
@@ -86,9 +81,8 @@ def download_filing(ticker: str, filing_date: str, progress_callback=None):
 
 
 def parse_filing(ticker: str, filing_date: str, progress_callback=None):
-    """Parse downloaded filing with Docling."""
+    """Parse downloaded filing with Docling using TenKParser."""
     
-    # Find the raw file
     raw_file = list(Path("data/raw").glob(f"{ticker}_10K_{filing_date}.*"))
     if not raw_file:
         st.error(f"Raw file not found: {ticker}_10K_{filing_date}")
@@ -98,24 +92,14 @@ def parse_filing(ticker: str, filing_date: str, progress_callback=None):
         progress_callback("Parsing with Docling...", 0)
     
     try:
-        # Import and use Docling directly
-        from docling.document_converter import DocumentConverter
-        
-        converter = DocumentConverter()
-        result = converter.convert(str(raw_file[0]))
-        
-        # Save as markdown
-        output_dir = Path("data/processed")
-        output_dir.mkdir(parents=True, exist_ok=True)
-        
-        output_file = output_dir / f"{ticker}_{filing_date}.md"
-        output_file.write_text(result.document.export_to_markdown(), encoding='utf-8')
+        parser = TenKParser()
+        result = parser.process_filing(raw_file[0])
         
         if progress_callback:
             progress_callback("Parsed successfully", 100)
         
-        st.success(f"✓ Parsed → {output_file.name}")
-        return True
+        st.success(f"✓ Parsed → {ticker}_{filing_date}.md")
+        return result.get('success', True)
         
     except Exception as e:
         st.error(f"Parse error: {e}")
@@ -125,9 +109,8 @@ def parse_filing(ticker: str, filing_date: str, progress_callback=None):
 
 
 def extract_sections(ticker: str, filing_date: str, progress_callback=None):
-    """Extract sections from parsed filing."""
+    """Extract sections from parsed filing using SectionSplitter."""
     
-    # Check if sections already exist
     existing_sections = list(Path("data/sections").glob(f"{ticker}_{filing_date}_item_*.txt"))
     if existing_sections:
         if progress_callback:
@@ -135,7 +118,6 @@ def extract_sections(ticker: str, filing_date: str, progress_callback=None):
         st.info(f"⏭️  Sections already extracted: {len(existing_sections)} files")
         return True
     
-    # Check if parsed file exists
     parsed_file = Path("data/processed") / f"{ticker}_{filing_date}.md"
     if not parsed_file.exists():
         st.error(f"Parsed file not found: {parsed_file}")
@@ -145,17 +127,9 @@ def extract_sections(ticker: str, filing_date: str, progress_callback=None):
         progress_callback("Extracting sections...", 0)
     
     try:
-        # Use the splitter script that already works
-        import subprocess
-        result = subprocess.run(
-            [sys.executable, "scripts/split_sections.py"],
-            capture_output=True,
-            text=True,
-            timeout=60,
-            cwd=str(Path.cwd())
-        )
+        splitter = SectionSplitter()
+        result = splitter.process_file(parsed_file)
         
-        # Check again if sections were created
         section_files = list(Path("data/sections").glob(f"{ticker}_{filing_date}_item_*.txt"))
         
         if section_files:
@@ -165,19 +139,16 @@ def extract_sections(ticker: str, filing_date: str, progress_callback=None):
             return True
         else:
             st.warning("No sections extracted - file structure may be different than expected")
-            # Not a failure - continue pipeline
             return True
             
     except Exception as e:
         st.warning(f"Section extraction note: {e}")
-        # Don't fail the pipeline
         return True
 
 
 def analyze_sentiment(ticker: str, filing_date: str, progress_callback=None):
     """Run sentiment analysis on sections."""
     
-    # Check if sentiment already exists
     sentiment_file = Path("data/sentiment") / f"{ticker}_{filing_date}_sentiment.json"
     if sentiment_file.exists():
         if progress_callback:
@@ -185,17 +156,15 @@ def analyze_sentiment(ticker: str, filing_date: str, progress_callback=None):
         st.info("⏭️  Sentiment analysis already complete")
         return True
     
-    # Check if section files exist
     section_files = list(Path("data/sections").glob(f"{ticker}_{filing_date}_item_*.txt"))
     if not section_files:
         st.warning(f"No section files found - skipping sentiment analysis")
-        return True  # Don't fail the pipeline
+        return True
     
     if progress_callback:
         progress_callback("Analyzing sentiment...", 0)
     
     try:
-        # Import FinBERT analyzer
         from transformers import AutoTokenizer, AutoModelForSequenceClassification
         import torch
         
@@ -205,6 +174,7 @@ def analyze_sentiment(ticker: str, filing_date: str, progress_callback=None):
         model.eval()
         
         results = {
+            'ticker': ticker,
             'sections': {},
             'overall': {}
         }
@@ -212,37 +182,31 @@ def analyze_sentiment(ticker: str, filing_date: str, progress_callback=None):
         all_scores = []
         
         for i, section_file in enumerate(section_files):
-            section_name = section_file.stem.split('_')[-1]  # item_1a, item_7, etc.
+            section_name = section_file.stem.split('_')[-1]
             
-            # Read section text
             text = section_file.read_text(encoding='utf-8')
             
-            # Chunk text (FinBERT max 512 tokens)
             max_length = 450
             words = text.split()
             chunks = []
-            for i in range(0, len(words), max_length):
-                chunk = ' '.join(words[i:i+max_length])
+            for j in range(0, len(words), max_length):
+                chunk = ' '.join(words[j:j+max_length])
                 chunks.append(chunk)
             
-            # Analyze each chunk
             chunk_scores = []
-            for chunk in chunks[:10]:  # Limit to first 10 chunks
+            for chunk in chunks[:10]:
                 inputs = tokenizer(chunk, return_tensors="pt", truncation=True, max_length=512)
                 
                 with torch.no_grad():
                     outputs = model(**inputs)
                     predictions = torch.nn.functional.softmax(outputs.logits, dim=-1)
                 
-                # FinBERT outputs: [negative, neutral, positive]
                 neg, neu, pos = predictions[0].tolist()
-                compound = pos - neg  # Simple compound score
+                compound = pos - neg
                 chunk_scores.append(compound)
             
-            # Average score for section
             avg_score = sum(chunk_scores) / len(chunk_scores) if chunk_scores else 0
             
-            # Determine signal
             if avg_score >= 0.5:
                 signal = 'STRONG_BUY'
             elif avg_score >= 0.2:
@@ -266,7 +230,6 @@ def analyze_sentiment(ticker: str, filing_date: str, progress_callback=None):
                 progress = int((i + 1) / len(section_files) * 100)
                 progress_callback(f"Analyzing {section_name}...", progress)
         
-        # Calculate overall
         overall_score = sum(all_scores) / len(all_scores) if all_scores else 0
         
         if overall_score >= 0.5:
@@ -285,12 +248,10 @@ def analyze_sentiment(ticker: str, filing_date: str, progress_callback=None):
             'signal': overall_signal
         }
         
-        # Save results
         sentiment_dir = Path("data/sentiment")
         sentiment_dir.mkdir(parents=True, exist_ok=True)
         
         output_file = sentiment_dir / f"{ticker}_{filing_date}_sentiment.json"
-        import json
         output_file.write_text(json.dumps(results, indent=2))
         
         if progress_callback:
@@ -309,43 +270,43 @@ def analyze_sentiment(ticker: str, filing_date: str, progress_callback=None):
 def index_to_opensearch(ticker: str, filing_date: str, progress_callback=None):
     """Index document chunks to OpenSearch."""
     
-    # Check if section files exist
     section_files = list(Path("data/sections").glob(f"{ticker}_{filing_date}_item_*.txt"))
     if not section_files:
-        st.error(f"No section files found for {ticker}_{filing_date}")
-        return False
+        st.warning(f"No section files found for {ticker}_{filing_date}")
+        return True
     
     if progress_callback:
         progress_callback("Indexing to OpenSearch...", 0)
     
     try:
-        # Run embedding pipeline
-        import subprocess
-        result = subprocess.run(
-            [sys.executable, "embedding_pipeline.py"],
-            capture_output=True,
-            text=True,
-            timeout=300,
-            cwd=str(Path.cwd())
-        )
+        from src.models.embeddings import EmbeddingPipeline
+        from src.data.chunker import DocumentChunker
+        
+        pipeline = EmbeddingPipeline()
+        chunker = DocumentChunker()
+        
+        all_chunks = []
+        for section_file in section_files:
+            chunks = chunker.chunk_file(section_file)
+            all_chunks.extend(chunks)
+        
+        if all_chunks:
+            documents = pipeline.prepare_documents(all_chunks)
+            pipeline.index_documents(documents)
         
         if progress_callback:
             progress_callback("Indexed to OpenSearch", 100)
         
-        # For indexing, we consider it successful if the script ran
-        # (it processes all files, so we can't check for specific output)
         return True
         
     except Exception as e:
-        st.warning(f"Indexing note: {e} (OpenSearch may not be running - skip this step)")
-        # Don't fail the whole pipeline if OpenSearch isn't running
+        st.warning(f"Indexing note: {e} (OpenSearch may not be running)")
         return True
 
 
 def run_full_pipeline(ticker: str, filing_date: str, status_container, progress_bar):
     """Run complete pipeline for a single filing."""
     
-    # Check if this filing is already fully processed
     sentiment_file = Path("data/sentiment") / f"{ticker}_{filing_date}_sentiment.json"
     if sentiment_file.exists():
         status_container.success(f"✅ {filing_date} already fully processed!")
@@ -370,18 +331,16 @@ def run_full_pipeline(ticker: str, filing_date: str, status_container, progress_
         success = step_func(ticker, filing_date, update_progress)
         
         if not success:
-            # Only fail on critical steps (parsing, sentiment)
             if step_name in ["📄 Parsing PDF", "🧠 Analyzing Sentiment"]:
                 status_container.error(f"❌ Failed at: {step_name}")
                 return False
             else:
-                # Non-critical steps - just warn and continue
                 status_container.warning(f"⚠️ Skipped: {step_name}")
         else:
             status_container.success(f"✅ {step_name} complete")
         
         progress_bar.progress((i + 1) / len(steps))
-        time.sleep(0.3)  # Visual feedback
+        time.sleep(0.3)
     
     status_container.success("🎉 Pipeline complete!")
     progress_bar.progress(1.0)
@@ -396,7 +355,6 @@ def render_data_management_page(companies: dict, selected_ticker: str):
     
     st.markdown("---")
     
-    # Company selector
     col1, col2 = st.columns([2, 1])
     
     with col1:
@@ -413,13 +371,11 @@ def render_data_management_page(companies: dict, selected_ticker: str):
     
     st.markdown("---")
     
-    # Get current status
     status = get_filing_status(manage_ticker)
     
     st.markdown("#### 📊 Filing Status")
     
     if status:
-        # Create status dataframe
         status_data = []
         for date, info in status.items():
             year = date[:4]
@@ -463,7 +419,6 @@ def render_data_management_page(companies: dict, selected_ticker: str):
     
     st.markdown("---")
     
-    # Download & Process Section
     st.markdown("#### 🚀 Download & Process")
     
     col1, col2 = st.columns(2)
@@ -473,7 +428,7 @@ def render_data_management_page(companies: dict, selected_ticker: str):
             "How many years?",
             options=[1, 3, 5, 10],
             format_func=lambda x: f"Last {x} year{'s' if x > 1 else ''}",
-            index=2  # Default to 5 years
+            index=2
         )
     
     with col2:
@@ -485,26 +440,21 @@ def render_data_management_page(companies: dict, selected_ticker: str):
     
     if st.button("📥 Download & Process", type="primary", use_container_width=True):
         
-        # Create progress containers
         status_container = st.empty()
         progress_bar = st.progress(0)
         
         status_container.info(f"Starting download for {manage_ticker}...")
         
-        # Use the historical downloader if available
         downloader = SECDownloader()
         
-        # Get CIK
         cik = downloader.get_cik(manage_ticker)
         if not cik:
             status_container.error("❌ Ticker not found in SEC database")
             st.stop()
         
-        # Get all available 10-K filings
         status_container.info("Fetching available filings from SEC...")
         
         try:
-            # Get filings metadata
             url = f"https://data.sec.gov/submissions/CIK{cik}.json"
             response = downloader.session.get(url, timeout=10)
             response.raise_for_status()
@@ -512,7 +462,6 @@ def render_data_management_page(companies: dict, selected_ticker: str):
             data = response.json()
             filings_data = data['filings']['recent']
             
-            # Find 10-K filings (not amendments)
             available_10ks = []
             for i, form in enumerate(filings_data['form']):
                 if form == '10-K' and len(available_10ks) < years_to_download:
@@ -538,13 +487,11 @@ def render_data_management_page(companies: dict, selected_ticker: str):
             
             status_container.success(f"✅ Found {len(available_10ks)} filings to download")
             
-            # Download each filing
             downloaded_files = []
             
             for idx, filing_info in enumerate(available_10ks):
                 filing_date = filing_info['filing_date']
                 
-                # Check if already exists
                 existing = list(Path("data/raw").glob(f"{manage_ticker}_10K_{filing_date}.*"))
                 if existing:
                     status_container.info(f"⏭️  Filing {filing_date} already exists")
@@ -554,15 +501,12 @@ def render_data_management_page(companies: dict, selected_ticker: str):
                 status_container.info(f"📥 Downloading filing {idx+1}/{len(available_10ks)} ({filing_date})...")
                 progress_bar.progress((idx + 1) / len(available_10ks) * 0.3)
                 
-                # Download
                 try:
-                    import time
-                    time.sleep(0.15)  # Rate limit
+                    time.sleep(0.15)
                     
                     response = downloader.session.get(filing_info['url'], timeout=30)
                     response.raise_for_status()
                     
-                    # Save file
                     ext = 'html' if 'html' in filing_info['document'] else 'txt'
                     filename = f"{manage_ticker}_10K_{filing_date}.{ext}"
                     filepath = Path("data/raw") / filename
@@ -583,13 +527,11 @@ def render_data_management_page(companies: dict, selected_ticker: str):
             st.stop()
         
         if auto_process and downloaded_files:
-            # Process each filing
             total_filings = len(downloaded_files)
             
             for idx, (filepath, filing_date) in enumerate(downloaded_files):
                 status_container.info(f"Processing filing {idx+1}/{total_filings} ({filing_date})...")
                 
-                # Run pipeline
                 success = run_full_pipeline(
                     manage_ticker,
                     filing_date,
@@ -613,7 +555,6 @@ def render_data_management_page(companies: dict, selected_ticker: str):
     
     st.markdown("---")
     
-    # Process pending files
     if status:
         pending = {date: info for date, info in status.items() if not info['complete']}
         
