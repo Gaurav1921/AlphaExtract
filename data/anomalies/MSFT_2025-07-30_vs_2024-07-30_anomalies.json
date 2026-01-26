@@ -1,0 +1,53 @@
+{
+  "ticker": "MSFT",
+  "current_filing_date": "2025-07-30",
+  "previous_filing_date": "2024-07-30",
+  "comparison": "2025 vs 2024",
+  "total_anomalies": 1,
+  "anomalies_by_severity": {
+    "high": 0,
+    "medium": 1,
+    "low": 0
+  },
+  "anomalies_by_type": {
+    "frequency_decrease": 1
+  },
+  "anomalies": [
+    {
+      "type": "frequency_decrease",
+      "severity": "medium",
+      "keyword": "china",
+      "current_count": 1,
+      "previous_count": 3,
+      "ratio": 0.33,
+      "description": "'china' mentioned 3.0x less (1 vs 3 previously)"
+    }
+  ],
+  "keyword_summary": {
+    "current": {
+      "ai": 71,
+      "regulation": 68,
+      "competition": 32,
+      "debt": 17,
+      "climate": 14,
+      "supply_chain": 12,
+      "cybersecurity": 10,
+      "tariff": 8,
+      "litigation": 6,
+      "currency": 6
+    },
+    "previous": {
+      "regulation": 75,
+      "ai": 63,
+      "competition": 38,
+      "debt": 15,
+      "climate": 13,
+      "supply_chain": 10,
+      "cybersecurity": 9,
+      "tariff": 8,
+      "litigation": 6,
+      "currency": 6
+    }
+  },
+  "analysis_date": "2026-01-27T02:46:15.642781"
+}

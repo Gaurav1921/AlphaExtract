@@ -1,34 +1,33 @@
 {
-  "ticker": "MSFT",
   "sections": {
     "item_1a": {
       "scores": {
-        "compound": 0.38524913471192124
+        "compound": 0.49244548110291364
       },
       "signal": "BUY",
-      "word_count": 10874
+      "word_count": 16946
     },
     "item_7": {
       "scores": {
-        "compound": 0.3124061655253172
+        "compound": 0.2861668146215379
       },
       "signal": "BUY",
-      "word_count": 7827
+      "word_count": 5102
     },
     "item_8": {
       "scores": {
-        "compound": 0.8434745982289314
+        "compound": 0.7728587966412306
       },
       "signal": "STRONG_BUY",
-      "word_count": 19091
+      "word_count": 3679
     }
   },
   "overall": {
-    "compound": 0.51370996615539,
+    "compound": 0.5171570307885607,
     "signal": "STRONG_BUY"
   },
   "_migrated": {
-    "date": "2026-01-27T02:15:23.812201",
+    "date": "2026-01-27T02:15:23.823567",
     "changes": [
       "'1a' \u2192 'item_1a'",
       "'7' \u2192 'item_7'",

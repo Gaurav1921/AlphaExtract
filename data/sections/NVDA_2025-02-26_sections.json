@@ -1,0 +1,26 @@
+{
+  "ticker": "NVDA",
+  "filing_date": "2025-02-26",
+  "sections_found": [
+    "item_1a",
+    "item_7",
+    "item_8"
+  ],
+  "section_stats": {
+    "item_1a": {
+      "chars": 142006,
+      "words": 20929,
+      "lines": 17
+    },
+    "item_7": {
+      "chars": 62519,
+      "words": 8949,
+      "lines": 43
+    },
+    "item_8": {
+      "chars": 5942,
+      "words": 857,
+      "lines": 7
+    }
+  }
+}

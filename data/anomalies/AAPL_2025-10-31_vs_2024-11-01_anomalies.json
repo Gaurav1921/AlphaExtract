@@ -1,0 +1,75 @@
+{
+  "ticker": "AAPL",
+  "current_filing_date": "2025-10-31",
+  "previous_filing_date": "2024-11-01",
+  "comparison": "2025 vs 2024",
+  "total_anomalies": 3,
+  "anomalies_by_severity": {
+    "high": 1,
+    "medium": 2,
+    "low": 0
+  },
+  "anomalies_by_type": {
+    "new_keyword": 1,
+    "frequency_increase": 2
+  },
+  "anomalies": [
+    {
+      "type": "new_keyword",
+      "severity": "high",
+      "keyword": "tariff",
+      "category": "tariff",
+      "count": 2,
+      "description": "First mention of 'tariff' (2 occurrences)",
+      "contexts": [
+        "...pared to 2024 primarily due to favorable costs and a different mix of products, partially offset by tariff costs. Products gross margin percentage decreased during 2025 compared to 2024 primarily due to a d...",
+        "...percentage decreased during 2025 compared to 2024 primarily due to a different mix of products and tariff costs, partially offset by other favorable costs. Services Gross Margin Services gross margin incre..."
+      ]
+    },
+    {
+      "type": "frequency_increase",
+      "severity": "medium",
+      "keyword": "interest_rate",
+      "current_count": 7,
+      "previous_count": 2,
+      "ratio": 3.5,
+      "description": "'interest_rate' mentioned 3.5x more (7 vs 2 previously)"
+    },
+    {
+      "type": "frequency_increase",
+      "severity": "medium",
+      "keyword": "debt",
+      "current_count": 10,
+      "previous_count": 3,
+      "ratio": 3.33,
+      "description": "'debt' mentioned 3.3x more (10 vs 3 previously)"
+    }
+  ],
+  "keyword_summary": {
+    "current": {
+      "regulation": 52,
+      "supply_chain": 37,
+      "competition": 27,
+      "currency": 25,
+      "litigation": 21,
+      "cybersecurity": 17,
+      "ai": 10,
+      "debt": 10,
+      "china": 9,
+      "interest_rate": 7
+    },
+    "previous": {
+      "regulation": 49,
+      "supply_chain": 42,
+      "competition": 25,
+      "litigation": 21,
+      "cybersecurity": 17,
+      "currency": 15,
+      "climate": 12,
+      "china": 9,
+      "ai": 5,
+      "inflation": 3
+    }
+  },
+  "analysis_date": "2026-01-27T02:46:31.712204"
+}

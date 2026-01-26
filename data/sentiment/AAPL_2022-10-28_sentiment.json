@@ -1,21 +1,21 @@
 {
   "ticker": "AAPL",
   "sections": {
-    "1a": {
+    "item_1a": {
       "scores": {
         "compound": 0.18671768046915532
       },
       "signal": "HOLD",
       "word_count": 11304
     },
-    "7": {
+    "item_7": {
       "scores": {
         "compound": 0.35916864359751344
       },
       "signal": "BUY",
       "word_count": 3411
     },
-    "8": {
+    "item_8": {
       "scores": {
         "compound": 0.5940842542797327
       },
@@ -26,5 +26,13 @@
   "overall": {
     "compound": 0.3799901927821338,
     "signal": "BUY"
+  },
+  "_migrated": {
+    "date": "2026-01-27T02:15:23.751699",
+    "changes": [
+      "'1a' \u2192 'item_1a'",
+      "'7' \u2192 'item_7'",
+      "'8' \u2192 'item_8'"
+    ]
   }
 }

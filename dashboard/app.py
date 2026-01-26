@@ -1,7 +1,16 @@
 """
-AlphaExtract Dashboard - Complete Integrated Version
-----------------------------------------------------
-Streamlit app with database persistence and data management.
+AlphaExtract Dashboard - v0.5.1 FINAL
+--------------------------------------
+LOCATION: dashboard/app.py
+
+FIXES:
+1. JSON key normalization (handles both "1a" and "item_1a" formats)
+2. Simplified anomaly page (no year comparison)
+3. Enhanced anomaly display with explanations and context
+4. Fixed year selector updating dashboard
+5. Removed st.rerun() from callbacks
+
+Version: 0.5.1
 """
 
 import streamlit as st
@@ -9,17 +18,47 @@ import sys
 from pathlib import Path
 import json
 import plotly.graph_objects as go
-import plotly.express as px
 from datetime import datetime
 import pandas as pd
-import subprocess
 
-sys.path.append(str(Path(__file__).parent.parent))
+# Add parent to path
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.rag.enhanced_rag import EnhancedRAG
-from src.models.anomaly import AnomalyDetector
-from src.database.supabase_client import SupabaseDB
+# Imports with error handling
+try:
+    from src.rag.enhanced_rag import EnhancedRAG
+except:
+    EnhancedRAG = None
 
+try:
+    from src.models.anomaly import AnomalyDetector
+except:
+    AnomalyDetector = None
+
+try:
+    from src.database.supabase_client import SupabaseDB
+except:
+    SupabaseDB = None
+
+try:
+    from src.data.company_search import CompanySearch
+except:
+    CompanySearch = None
+
+try:
+    from src.pipeline.automated import (
+        AutomatedPipeline, 
+        get_filing_status, 
+        get_available_years,
+        get_all_sentiment_data
+    )
+except:
+    AutomatedPipeline = None
+    get_filing_status = None
+    get_available_years = lambda x: []
+    get_all_sentiment_data = lambda x: []
+
+# Page config
 st.set_page_config(
     page_title="AlphaExtract - AI Financial Intelligence",
     page_icon="🎯",
@@ -27,11 +66,11 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Fixed CSS - Better contrast for signal colors on dark background
+# Custom CSS
 st.markdown("""
 <style>
     .main-header {
-        font-size: 3rem;
+        font-size: 2.5rem;
         font-weight: bold;
         background: linear-gradient(90deg, #1e3a8a 0%, #3b82f6 100%);
         -webkit-background-clip: text;
@@ -39,261 +78,446 @@ st.markdown("""
         margin-bottom: 0.5rem;
     }
     .metric-card {
-        background-color: #1e293b;
+        background-color: #f8fafc;
         border-radius: 10px;
         padding: 20px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.3);
-        border: 1px solid #334155;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
     }
-    .metric-label {
-        color: #94a3b8;
-        font-size: 0.9rem;
-        margin-bottom: 8px;
+    .anomaly-card {
+        background-color: #1e293b;
+        border-radius: 10px;
+        padding: 15px;
+        margin: 10px 0;
+        border-left: 4px solid #3b82f6;
     }
-    .metric-score {
-        color: #64748b;
-        font-size: 0.85rem;
-        margin-top: 4px;
-    }
-    /* Fixed signal colors - high contrast */
-    .signal-strong-buy { 
-        color: #22c55e !important; 
-        font-weight: bold; 
-        font-size: 1.5rem;
-        text-shadow: 0 0 10px rgba(34, 197, 94, 0.5);
-    }
-    .signal-buy { 
-        color: #4ade80 !important; 
-        font-weight: bold; 
-        font-size: 1.5rem;
-        text-shadow: 0 0 10px rgba(74, 222, 128, 0.5);
-    }
-    .signal-hold { 
-        color: #fbbf24 !important; 
-        font-weight: bold; 
-        font-size: 1.5rem;
-        text-shadow: 0 0 10px rgba(251, 191, 36, 0.5);
-    }
-    .signal-sell { 
-        color: #fb923c !important; 
-        font-weight: bold; 
-        font-size: 1.5rem;
-        text-shadow: 0 0 10px rgba(251, 146, 60, 0.5);
-    }
-    .signal-strong-sell { 
-        color: #ef4444 !important; 
-        font-weight: bold; 
-        font-size: 1.5rem;
-        text-shadow: 0 0 10px rgba(239, 68, 68, 0.5);
-    }
-    .signal-na {
-        color: #94a3b8 !important;
-        font-weight: bold;
-        font-size: 1.3rem;
-    }
+    .anomaly-high { border-left-color: #ef4444; }
+    .anomaly-medium { border-left-color: #f59e0b; }
+    .anomaly-low { border-left-color: #22c55e; }
 </style>
 """, unsafe_allow_html=True)
 
 
-def get_signal_class(signal: str) -> str:
-    """Get CSS class for signal."""
-    if not signal or signal == 'N/A':
-        return 'signal-na'
-    return f"signal-{signal.lower().replace('_', '-')}"
+# ============================================================================
+# SESSION STATE INITIALIZATION
+# ============================================================================
 
-if 'rag' not in st.session_state:
-    with st.spinner("🔄 Initializing RAG system..."):
-        try:
-            st.session_state.rag = EnhancedRAG()
-        except Exception as e:
-            st.session_state.rag = None
-
-if 'anomaly_detector' not in st.session_state:
-    st.session_state.anomaly_detector = AnomalyDetector()
-
-if 'db' not in st.session_state:
-    st.session_state.db = SupabaseDB()
-
-if 'chat_history' not in st.session_state:
-    st.session_state.chat_history = []
+if 'company_search' not in st.session_state:
+    st.session_state.company_search = CompanySearch() if CompanySearch else None
 
 if 'selected_ticker' not in st.session_state:
     st.session_state.selected_ticker = 'AAPL'
 
-if 'current_page' not in st.session_state:
-    st.session_state.current_page = "🏠 Dashboard"
+if 'selected_year' not in st.session_state:
+    st.session_state.selected_year = None
+
+if 'chat_history' not in st.session_state:
+    st.session_state.chat_history = []
+
+if 'rag' not in st.session_state:
+    st.session_state.rag = None
+    if EnhancedRAG:
+        try:
+            st.session_state.rag = EnhancedRAG()
+        except:
+            pass
+
+if 'anomaly_detector' not in st.session_state:
+    st.session_state.anomaly_detector = AnomalyDetector() if AnomalyDetector else None
+
+if 'db' not in st.session_state:
+    st.session_state.db = SupabaseDB() if SupabaseDB else None
+
+if 'anomaly_report' not in st.session_state:
+    st.session_state.anomaly_report = None
+
+if 'anomaly_ticker' not in st.session_state:
+    st.session_state.anomaly_ticker = None
 
 
-def load_and_save_sentiment(ticker: str):
-    """Load sentiment from JSON and save to database."""
-    sentiment_files = list(Path("data/sentiment").glob(f"{ticker}_*_sentiment.json"))
-    
-    if not sentiment_files:
-        return None, None
-    
-    latest_file = sorted(sentiment_files)[-1]
-    with open(latest_file, 'r') as f:
-        sentiment_data = json.load(f)
-    
-    filing_date = latest_file.stem.split('_')[1]
-    
-    if st.session_state.db.client:
-        st.session_state.db.insert_sentiment(ticker, filing_date, sentiment_data)
-    
-    return sentiment_data, filing_date
+# ============================================================================
+# HELPER FUNCTIONS
+# ============================================================================
 
-
-def get_sentiment_history(ticker: str):
-    """Get historical sentiment from database."""
-    if not st.session_state.db.client:
-        return []
-    
-    return st.session_state.db.get_sentiment_history(ticker, limit=10)
-
-
-def count_available_filings(ticker: str) -> int:
-    """Count how many sentiment files exist for a ticker."""
-    return len(list(Path("data/sentiment").glob(f"{ticker}_*_sentiment.json")))
-
-
-# Sidebar
-with st.sidebar:
-    st.markdown("### 🏢 Company Selection")
-    
-    companies = {
+def get_companies() -> dict:
+    """Get all available companies (defaults + watchlist)."""
+    defaults = {
         'AAPL': '🍎 Apple Inc.',
         'GOOGL': '🔍 Alphabet Inc.',
         'MSFT': '🪟 Microsoft Corp.',
         'TSLA': '⚡ Tesla Inc.'
     }
     
+    if st.session_state.company_search:
+        return st.session_state.company_search.get_all_companies()
+    
+    return defaults
+
+
+def normalize_sentiment_data(data: dict) -> dict:
+    """
+    Normalize sentiment JSON to use consistent keys.
+    Handles both old format ("1a", "7", "8") and new format ("item_1a", etc.)
+    """
+    if not data or 'sections' not in data:
+        return data
+    
+    sections = data['sections']
+    normalized = {}
+    
+    # Key mapping: old -> new
+    key_map = {
+        '1a': 'item_1a',
+        '1b': 'item_1b',
+        '1': 'item_1',
+        '7': 'item_7',
+        '7a': 'item_7a',
+        '8': 'item_8',
+        '9': 'item_9',
+    }
+    
+    for key, value in sections.items():
+        # Already in correct format
+        if key.startswith('item_'):
+            normalized[key] = value
+        # Legacy format
+        elif key in key_map:
+            normalized[key_map[key]] = value
+        else:
+            # Unknown key, try to normalize
+            normalized[f"item_{key}"] = value
+    
+    data['sections'] = normalized
+    return data
+
+
+def load_sentiment_for_year(ticker: str, year: str = None) -> tuple:
+    """Load sentiment data for a specific year or latest."""
+    sentiment_dir = Path("data/sentiment")
+    sentiment_dir.mkdir(parents=True, exist_ok=True)
+    
+    ticker = ticker.upper()
+    files = list(sentiment_dir.glob(f"{ticker}_*_sentiment.json"))
+    
+    if not files:
+        return None, None
+    
+    if year:
+        # Filter files that match the year
+        year_files = [f for f in files if f.stem.split('_')[1].startswith(year)]
+        if year_files:
+            files = year_files
+    
+    # Sort and get the appropriate file (latest within selection)
+    latest_file = sorted(files, reverse=True)[0]
+    
+    with open(latest_file, 'r') as f:
+        sentiment_data = json.load(f)
+    
+    # NORMALIZE KEYS
+    sentiment_data = normalize_sentiment_data(sentiment_data)
+    
+    filing_date = latest_file.stem.split('_')[1]
+    return sentiment_data, filing_date
+
+
+def get_section_data(sentiment_data: dict, section_key: str) -> dict:
+    """
+    Safely get section data with fallback for missing keys.
+    
+    Args:
+        sentiment_data: Full sentiment JSON (already normalized)
+        section_key: Key like 'item_1a', 'item_7', 'item_8'
+    
+    Returns:
+        Section data dict or empty dict with defaults
+    """
+    if not sentiment_data:
+        return {'scores': {'compound': 0}, 'signal': 'N/A', 'word_count': 0}
+    
+    sections = sentiment_data.get('sections', {})
+    
+    # Direct lookup (should work after normalization)
+    if section_key in sections:
+        return sections[section_key]
+    
+    # Return default
+    return {'scores': {'compound': 0}, 'signal': 'N/A', 'word_count': 0}
+
+
+def get_historical_sentiment(ticker: str) -> list:
+    """Get all historical sentiment data for trend chart."""
+    try:
+        sentiment_data = get_all_sentiment_data(ticker)
+    except:
+        sentiment_data = []
+    
+    if not sentiment_data:
+        # Fallback: manually load files
+        sentiment_dir = Path("data/sentiment")
+        files = sorted(sentiment_dir.glob(f"{ticker}_*_sentiment.json"))
+        
+        sentiment_data = []
+        for f in files:
+            try:
+                with open(f, 'r') as fp:
+                    data = json.load(f)
+                    filing_date = f.stem.split('_')[1]
+                    sentiment_data.append((filing_date, data))
+            except:
+                pass
+    
+    history = []
+    for filing_date, data in sentiment_data:
+        history.append({
+            'filing_date': filing_date,
+            'year': filing_date[:4],
+            'overall_compound': data.get('overall', {}).get('compound', 0),
+            'signal': data.get('overall', {}).get('signal', 'HOLD')
+        })
+    
+    return history
+
+
+def get_available_years_local(ticker: str) -> list:
+    """Get available years for a ticker (fallback if pipeline not imported)."""
+    try:
+        return get_available_years(ticker)
+    except:
+        sentiment_dir = Path("data/sentiment")
+        files = list(sentiment_dir.glob(f"{ticker}_*_sentiment.json"))
+        years = set()
+        for f in files:
+            parts = f.stem.split('_')
+            if len(parts) >= 2:
+                year = parts[1][:4]
+                years.add(year)
+        return sorted(years, reverse=True)
+
+
+def get_filing_status_local(ticker: str) -> dict:
+    """Get filing status (fallback)."""
+    try:
+        if get_filing_status:
+            return get_filing_status(ticker)
+    except:
+        pass
+    return {}
+
+
+# ============================================================================
+# SIDEBAR
+# ============================================================================
+
+with st.sidebar:
+    # Company Search
+    if st.session_state.company_search:
+        st.markdown("### 🔍 Search Company")
+        
+        search_query = st.text_input(
+            "Ticker or name",
+            placeholder="NVDA, NVIDIA...",
+            key="search_input"
+        )
+        
+        if search_query and len(search_query) >= 2:
+            if search_query.upper() == search_query or len(search_query) <= 5:
+                result = st.session_state.company_search.search_by_ticker(search_query)
+                results = [result] if result else []
+            else:
+                results = st.session_state.company_search.search_by_name(search_query, limit=5)
+            
+            if results:
+                for company in results:
+                    if company:
+                        col1, col2 = st.columns([3, 1])
+                        with col1:
+                            st.text(f"{company.ticker}")
+                        with col2:
+                            if st.button("➕", key=f"add_{company.ticker}"):
+                                st.session_state.company_search.add_to_watchlist(company.ticker)
+                                st.success(f"Added!")
+            else:
+                st.caption("No results")
+        
+        st.markdown("---")
+    
+    # Company Selector
+    st.markdown("### 🏢 Select Company")
+    companies = get_companies()
+    
     selected_ticker = st.selectbox(
-        "Select Company",
+        "Company",
         options=list(companies.keys()),
         format_func=lambda x: companies[x],
-        index=list(companies.keys()).index(st.session_state.selected_ticker)
+        index=list(companies.keys()).index(st.session_state.selected_ticker) if st.session_state.selected_ticker in companies else 0,
+        key="ticker_selector"
     )
+    
+    # Clear anomaly cache if ticker changed
+    if selected_ticker != st.session_state.selected_ticker:
+        st.session_state.anomaly_report = None
+        st.session_state.anomaly_ticker = None
     
     st.session_state.selected_ticker = selected_ticker
     
+    # Year Selector
+    available_years = get_available_years_local(selected_ticker)
+    
+    if available_years:
+        st.markdown("### 📅 Filing Year")
+        
+        year_options = ["Latest"] + available_years
+        
+        current_year = st.session_state.selected_year
+        if current_year and current_year in available_years:
+            default_index = year_options.index(current_year)
+        else:
+            default_index = 0
+        
+        selected_year = st.selectbox(
+            "Year",
+            options=year_options,
+            index=default_index,
+            key=f"year_selector_{selected_ticker}"
+        )
+        
+        st.session_state.selected_year = None if selected_year == "Latest" else selected_year
+    else:
+        st.session_state.selected_year = None
+    
     st.markdown("---")
     
+    # Navigation
     st.markdown("### 📁 Navigation")
     page = st.radio(
-        "Go to",
+        "Page",
         ["🏠 Dashboard", "💬 RAG Chat", "🚨 Anomalies", "📊 Analytics", "📥 Data Management"],
-        index=["🏠 Dashboard", "💬 RAG Chat", "🚨 Anomalies", "📊 Analytics", "📥 Data Management"].index(st.session_state.current_page),
-        label_visibility="collapsed",
-        key="nav_radio"
+        label_visibility="collapsed"
     )
     
-    # Update current page state
-    st.session_state.current_page = page
-    
     st.markdown("---")
     
-    st.markdown("### ⚙️ Actions")
-    if st.button("🔄 Refresh Data", use_container_width=True):
-        st.rerun()
+    # Watchlist
+    if st.session_state.company_search:
+        watchlist = st.session_state.company_search.get_watchlist()
+        if watchlist:
+            with st.expander(f"📋 Watchlist ({len(watchlist)})"):
+                for item in watchlist:
+                    col1, col2 = st.columns([3, 1])
+                    with col1:
+                        st.text(item['ticker'])
+                    with col2:
+                        if st.button("❌", key=f"rm_{item['ticker']}"):
+                            st.session_state.company_search.remove_from_watchlist(item['ticker'])
     
-    if st.button("🗑️ Clear Chat History", use_container_width=True):
-        st.session_state.chat_history = []
-        if st.session_state.rag:
-            st.session_state.rag.reset_conversation()
-        st.success("Chat history cleared!")
-    
+    # Status
     st.markdown("---")
-    
-    st.markdown("### 🗄️ Database")
-    if st.session_state.db.client:
-        st.success("✓ Connected")
-    else:
-        st.error("✗ Not connected")
-    
-    st.markdown("---")
-    st.markdown("### ℹ️ About")
-    st.markdown("""
-    **AlphaExtract v0.4.0**
-    
-    AI-Powered Financial Intelligence
-    
-    - 📊 Sentiment Analysis
-    - 💬 Conversational RAG
-    - 🚨 Anomaly Detection
-    - 🗄️ Supabase Database
-    """)
+    status = get_filing_status_local(selected_ticker)
+    if status:
+        complete = sum(1 for s in status.values() if getattr(s, 'is_complete', False))
+        st.metric("Processed", f"{complete}/{len(status)}")
 
+
+# ============================================================================
 # PAGE: DASHBOARD
+# ============================================================================
+
 if page == "🏠 Dashboard":
     st.markdown(f'<h1 class="main-header">🎯 AlphaExtract</h1>', unsafe_allow_html=True)
-    st.markdown(f"### AI-Powered Intelligence for {companies[selected_ticker]}")
+    st.markdown(f"### {companies.get(selected_ticker, selected_ticker)}")
     
-    sentiment_data, filing_date = load_and_save_sentiment(selected_ticker)
+    # Get year filter
+    year_filter = st.session_state.selected_year
+    
+    # Load sentiment
+    sentiment_data, filing_date = load_sentiment_for_year(selected_ticker, year_filter)
     
     if not sentiment_data:
-        st.error(f"No sentiment data found for {selected_ticker}.")
-        st.info("💡 Go to **📥 Data Management** to download and process filings.")
+        st.warning(f"No sentiment data for {selected_ticker}")
+        st.info("💡 Go to **📥 Data Management** to process filings.")
     else:
+        # Show year indicator
+        if year_filter:
+            st.success(f"📅 Showing **{year_filter}** data (Filed: {filing_date})")
+        else:
+            st.info(f"📅 Showing **Latest** filing ({filing_date})")
+        
         st.markdown("---")
+        
+        # Get section data (handles both key formats)
+        risk = get_section_data(sentiment_data, 'item_1a')
+        mda = get_section_data(sentiment_data, 'item_7')
+        fin = get_section_data(sentiment_data, 'item_8')
+        
+        overall = sentiment_data.get('overall', {})
+        overall_score = overall.get('compound', 0)
+        overall_signal = overall.get('signal', 'N/A')
+        
+        # Color mapping
+        colors = {
+            'STRONG_BUY': '#00C853', 
+            'BUY': '#69F0AE', 
+            'HOLD': '#FFD600', 
+            'SELL': '#FF9100', 
+            'STRONG_SELL': '#FF1744',
+            'N/A': '#9E9E9E'
+        }
+        
+        # Metrics Row
         col1, col2, col3, col4 = st.columns(4)
         
-        overall_score = sentiment_data['overall']['compound']
-        overall_signal = sentiment_data['overall']['signal']
-        
         with col1:
-            signal_class = get_signal_class(overall_signal)
+            color = colors.get(overall_signal, '#9E9E9E')
             st.markdown(f"""
             <div class="metric-card">
-                <div class="metric-label">Overall Signal</div>
-                <div class="{signal_class}">{overall_signal}</div>
-                <div class="metric-score">Score: {overall_score:+.3f}</div>
+                <div style="color: #64748b;">Overall Signal</div>
+                <div style="color: {color}; font-weight: bold; font-size: 1.5rem;">{overall_signal}</div>
+                <div style="color: #94a3b8;">Score: {overall_score:+.3f}</div>
             </div>
             """, unsafe_allow_html=True)
         
         with col2:
-            risk_score = sentiment_data['sections'].get('item_1a', {}).get('scores', {}).get('compound', 0)
-            risk_signal = sentiment_data['sections'].get('item_1a', {}).get('signal', 'N/A')
-            signal_class = get_signal_class(risk_signal)
+            risk_score = risk.get('scores', {}).get('compound', 0)
+            risk_signal = risk.get('signal', 'N/A')
             st.markdown(f"""
             <div class="metric-card">
-                <div class="metric-label">Risk Factors</div>
-                <div class="{signal_class}">{risk_signal}</div>
-                <div class="metric-score">Score: {risk_score:+.3f}</div>
+                <div style="color: #64748b;">Risk Factors</div>
+                <div style="font-weight: bold; font-size: 1.3rem;">{risk_signal}</div>
+                <div style="color: #94a3b8;">Score: {risk_score:+.3f}</div>
             </div>
             """, unsafe_allow_html=True)
         
         with col3:
-            mda_score = sentiment_data['sections'].get('item_7', {}).get('scores', {}).get('compound', 0)
-            mda_signal = sentiment_data['sections'].get('item_7', {}).get('signal', 'N/A')
-            signal_class = get_signal_class(mda_signal)
+            mda_score = mda.get('scores', {}).get('compound', 0)
+            mda_signal = mda.get('signal', 'N/A')
             st.markdown(f"""
             <div class="metric-card">
-                <div class="metric-label">MD&A</div>
-                <div class="{signal_class}">{mda_signal}</div>
-                <div class="metric-score">Score: {mda_score:+.3f}</div>
+                <div style="color: #64748b;">MD&A</div>
+                <div style="font-weight: bold; font-size: 1.3rem;">{mda_signal}</div>
+                <div style="color: #94a3b8;">Score: {mda_score:+.3f}</div>
             </div>
             """, unsafe_allow_html=True)
         
         with col4:
-            fin_score = sentiment_data['sections'].get('item_8', {}).get('scores', {}).get('compound', 0)
-            fin_signal = sentiment_data['sections'].get('item_8', {}).get('signal', 'N/A')
-            signal_class = get_signal_class(fin_signal)
+            fin_score = fin.get('scores', {}).get('compound', 0)
+            fin_signal = fin.get('signal', 'N/A')
             st.markdown(f"""
             <div class="metric-card">
-                <div class="metric-label">Financials</div>
-                <div class="{signal_class}">{fin_signal}</div>
-                <div class="metric-score">Score: {fin_score:+.3f}</div>
+                <div style="color: #64748b;">Financials</div>
+                <div style="font-weight: bold; font-size: 1.3rem;">{fin_signal}</div>
+                <div style="color: #94a3b8;">Score: {fin_score:+.3f}</div>
             </div>
             """, unsafe_allow_html=True)
         
         st.markdown("---")
         
+        # Charts
         col_left, col_right = st.columns(2)
         
         with col_left:
-            st.markdown("#### 📊 Sentiment Breakdown")
+            st.markdown("#### 📊 Sentiment by Section")
             
-            sections_data = {
+            sections_chart = {
                 'Risk Factors': risk_score,
                 'MD&A': mda_score,
                 'Financials': fin_score
@@ -301,314 +525,355 @@ if page == "🏠 Dashboard":
             
             fig = go.Figure(data=[
                 go.Bar(
-                    x=list(sections_data.keys()),
-                    y=list(sections_data.values()),
-                    marker_color=['#3b82f6' if v >= 0 else '#ef4444' for v in sections_data.values()],
-                    text=[f"{v:+.3f}" for v in sections_data.values()],
+                    x=list(sections_chart.keys()),
+                    y=list(sections_chart.values()),
+                    marker_color=['#3b82f6' if v >= 0 else '#ef4444' for v in sections_chart.values()],
+                    text=[f"{v:+.3f}" for v in sections_chart.values()],
                     textposition='outside'
                 )
             ])
-            
             fig.update_layout(
-                yaxis_title="Sentiment Score",
+                yaxis_title="Score",
                 yaxis_range=[-1, 1],
-                showlegend=False,
-                height=300,
+                height=350,
                 margin=dict(l=20, r=20, t=20, b=20)
             )
-            
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, use_container_width=True, key=f"section_chart_{selected_ticker}_{year_filter}")
         
         with col_right:
-            st.markdown("#### 📈 Historical Sentiment Trend")
+            st.markdown("#### 📈 Historical Trend")
             
-            history = get_sentiment_history(selected_ticker)
+            history = get_historical_sentiment(selected_ticker)
             
-            if history and len(history) > 1:
-                dates = [h['filing_date'] for h in reversed(history)]
-                scores = [h['overall_compound'] for h in reversed(history)]
+            if len(history) >= 2:
+                # Sort by date
+                history.sort(key=lambda x: x['filing_date'])
+                
+                dates = [h['filing_date'] for h in history]
+                scores = [h['overall_compound'] for h in history]
                 
                 fig = go.Figure()
                 fig.add_trace(go.Scatter(
                     x=dates,
                     y=scores,
                     mode='lines+markers',
-                    line=dict(color='#3b82f6', width=2),
-                    marker=dict(size=8),
+                    line=dict(color='#3b82f6', width=3),
+                    marker=dict(size=10),
                     name='Sentiment'
                 ))
                 
+                # Add reference line and zones
                 fig.add_hline(y=0, line_dash="dash", line_color="gray", opacity=0.5)
+                fig.add_hrect(y0=0.2, y1=1, fillcolor="green", opacity=0.1, line_width=0)
+                fig.add_hrect(y0=-1, y1=-0.2, fillcolor="red", opacity=0.1, line_width=0)
                 
                 fig.update_layout(
-                    yaxis_title="Sentiment Score",
+                    yaxis_title="Score",
                     yaxis_range=[-1, 1],
-                    showlegend=False,
-                    height=300,
-                    margin=dict(l=20, r=20, t=20, b=20)
+                    height=350,
+                    margin=dict(l=20, r=20, t=20, b=20),
+                    showlegend=False
                 )
-                
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, use_container_width=True, key=f"trend_{selected_ticker}")
             else:
-                st.info("Need multiple filings for historical trend. Download more in Data Management!")
-        
-        st.markdown("---")
-        st.markdown("#### 📄 Filing Information")
-        
-        info_col1, info_col2, info_col3, info_col4 = st.columns(4)
-        
-        with info_col1:
-            st.metric("Filing Date", filing_date)
-        
-        with info_col2:
-            total_words = sum(s.get('word_count', 0) for s in sentiment_data['sections'].values())
-            st.metric("Words Analyzed", f"{total_words:,}")
-        
-        with info_col3:
-            st.metric("Sections", len(sentiment_data['sections']))
-        
-        with info_col4:
-            if st.session_state.db.client:
-                st.metric("Database", "✓ Saved")
-            else:
-                st.metric("Database", "✗ Not saved")
+                st.info(f"📊 Need 2+ filings for trend chart. Currently have {len(history)}.")
+                st.markdown("**Download more years in Data Management!**")
 
+
+# ============================================================================
 # PAGE: RAG CHAT
+# ============================================================================
+
 elif page == "💬 RAG Chat":
     st.markdown(f'<h1 class="main-header">💬 RAG Chat</h1>', unsafe_allow_html=True)
-    st.markdown(f"### Ask questions about {companies[selected_ticker]}'s 10-K filing")
+    st.markdown(f"### Ask about {companies.get(selected_ticker, selected_ticker)}")
+    
+    if not st.session_state.rag:
+        st.warning("⚠️ RAG system not initialized. Check OpenSearch connection.")
+        st.info("Make sure Docker is running: `docker-compose up -d`")
+    else:
+        # Display chat history
+        for msg in st.session_state.chat_history:
+            with st.chat_message(msg["role"]):
+                st.markdown(msg["content"])
+        
+        # Chat input
+        if prompt := st.chat_input("Ask about the 10-K filing..."):
+            st.session_state.chat_history.append({"role": "user", "content": prompt})
+            
+            with st.chat_message("user"):
+                st.markdown(prompt)
+            
+            with st.chat_message("assistant"):
+                with st.spinner("Thinking..."):
+                    try:
+                        response = st.session_state.rag.query(
+                            prompt,
+                            ticker=selected_ticker,
+                            k=5,
+                            verbose=False
+                        )
+                        st.markdown(response['answer'])
+                        st.session_state.chat_history.append({
+                            "role": "assistant",
+                            "content": response['answer']
+                        })
+                    except Exception as e:
+                        st.error(f"Error: {e}")
+
+
+# ============================================================================
+# PAGE: ANOMALIES - SIMPLIFIED WITH ENHANCED DISPLAY
+# ============================================================================
+
+elif page == "🚨 Anomalies":
+    st.markdown(f'<h1 class="main-header">🚨 Anomaly Detection</h1>', unsafe_allow_html=True)
+    st.markdown(f"### Unusual patterns in {companies.get(selected_ticker, selected_ticker)}")
+    
+    available_years = get_available_years_local(selected_ticker)
+    
+    if len(available_years) < 2:
+        st.warning(f"⚠️ Need 2+ years of data for anomaly detection.")
+        st.info(f"Currently have {len(available_years)} year(s). Download more in Data Management.")
+    else:
+        st.markdown("---")
+        
+        # Simple analyze button
+        col1, col2 = st.columns([3, 1])
+        
+        with col1:
+            st.markdown(f"**Comparing:** Latest filing vs historical average ({len(available_years)} years available)")
+        
+        with col2:
+            analyze_btn = st.button("🔍 Analyze", type="primary", use_container_width=True)
+        
+        # Run analysis
+        if analyze_btn and st.session_state.anomaly_detector:
+            with st.spinner(f"Analyzing {selected_ticker}..."):
+                report = st.session_state.anomaly_detector.analyze_ticker(selected_ticker)
+                st.session_state.anomaly_report = report
+                st.session_state.anomaly_ticker = selected_ticker
+        
+        # Display results
+        report = st.session_state.anomaly_report
+        
+        if report and st.session_state.anomaly_ticker == selected_ticker:
+            if 'error' in report:
+                st.error(f"Error: {report['error']}")
+            else:
+                st.success(f"✅ Analysis complete! Comparing {report.get('current_filing_date', 'latest')} to {report.get('compared_to', 'previous')}")
+                
+                # Metrics
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("Total Anomalies", report.get('total_anomalies', 0))
+                with col2:
+                    st.metric("🔴 High Severity", report.get('anomalies_by_severity', {}).get('high', 0))
+                with col3:
+                    st.metric("🟡 Medium Severity", report.get('anomalies_by_severity', {}).get('medium', 0))
+                
+                st.markdown("---")
+                
+                # Display anomalies
+                anomalies = report.get('anomalies', [])
+                
+                if not anomalies:
+                    st.success("✅ No anomalies detected - filing appears consistent with historical patterns!")
+                else:
+                    st.markdown("### Detected Anomalies")
+                    
+                    for anomaly in anomalies:
+                        severity = anomaly.get('severity', 'medium')
+                        
+                        # Icon and color based on severity
+                        if severity == 'high':
+                            icon = '🔴'
+                            border_color = '#ef4444'
+                        elif severity == 'medium':
+                            icon = '🟡'
+                            border_color = '#f59e0b'
+                        else:
+                            icon = '🟢'
+                            border_color = '#22c55e'
+                        
+                        # Anomaly card
+                        with st.expander(f"{icon} {anomaly.get('title', 'Anomaly')}", expanded=(severity == 'high')):
+                            # Category and description
+                            st.markdown(f"**Category:** {anomaly.get('category', 'General')}")
+                            st.markdown(f"**{anomaly.get('description', '')}**")
+                            
+                            st.markdown("---")
+                            
+                            # Why it matters
+                            st.markdown("**Why this matters:**")
+                            st.markdown(f"> {anomaly.get('explanation', 'N/A')}")
+                            
+                            # Severity reasoning
+                            st.markdown(f"**Severity ({severity}):** {anomaly.get('severity_reason', 'N/A')}")
+                            
+                            # Context from filing (if available)
+                            context = anomaly.get('context', [])
+                            if context:
+                                st.markdown("---")
+                                st.markdown("**Context from filing:**")
+                                for ctx in context[:2]:
+                                    st.markdown(f'> *"{ctx[:300]}{"..." if len(ctx) > 300 else ""}"*')
+        else:
+            st.info("👆 Click **Analyze** to detect anomalies in the latest filing")
+
+
+# ============================================================================
+# PAGE: ANALYTICS
+# ============================================================================
+
+elif page == "📊 Analytics":
+    st.markdown(f'<h1 class="main-header">📊 Analytics</h1>', unsafe_allow_html=True)
+    
+    st.markdown("#### 📈 Sentiment Comparison (All Companies)")
+    
+    comparison = []
+    for ticker in list(get_companies().keys()):
+        sentiment, date = load_sentiment_for_year(ticker)
+        if sentiment:
+            comparison.append({
+                'Company': ticker,
+                'Date': date,
+                'Score': sentiment.get('overall', {}).get('compound', 0),
+                'Signal': sentiment.get('overall', {}).get('signal', 'N/A')
+            })
+    
+    if comparison:
+        df = pd.DataFrame(comparison)
+        
+        # Bar chart
+        fig = go.Figure(data=[
+            go.Bar(
+                x=df['Company'],
+                y=df['Score'],
+                marker_color=['#3b82f6' if s >= 0 else '#ef4444' for s in df['Score']],
+                text=[f"{s:.2f}" for s in df['Score']],
+                textposition='outside'
+            )
+        ])
+        fig.update_layout(
+            yaxis_range=[-1, 1],
+            height=400,
+            yaxis_title="Sentiment Score"
+        )
+        st.plotly_chart(fig, use_container_width=True)
+        
+        # Table
+        st.dataframe(df, use_container_width=True, hide_index=True)
+    else:
+        st.info("No sentiment data available. Process some filings first!")
+
+
+# ============================================================================
+# PAGE: DATA MANAGEMENT
+# ============================================================================
+
+elif page == "📥 Data Management":
+    st.markdown(f'<h1 class="main-header">📥 Data Management</h1>', unsafe_allow_html=True)
+    
+    # Company selector
+    col1, col2 = st.columns([3, 1])
+    with col1:
+        manage_ticker = st.selectbox(
+            "Select Company",
+            options=list(get_companies().keys()),
+            format_func=lambda x: get_companies()[x],
+            index=list(get_companies().keys()).index(selected_ticker) if selected_ticker in get_companies() else 0,
+            key="manage_ticker_select"
+        )
+    with col2:
+        st.metric("Selected", manage_ticker)
     
     st.markdown("---")
     
-    for message in st.session_state.chat_history:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
-            if "sources" in message:
-                with st.expander("📚 View Sources"):
-                    for i, source in enumerate(message["sources"], 1):
-                        st.markdown(f"""
-                        **Source {i}:** {source['ticker']} - {source['section']} (Chunk {source['chunk_id']})  
-                        **Relevance:** {source['score']:.3f}  
-                        **Preview:** {source['preview']}
-                        """)
+    # Status table
+    st.markdown("#### 📊 Filing Status")
     
-    if prompt := st.chat_input("Ask a question about the 10-K filing..."):
-        st.session_state.chat_history.append({"role": "user", "content": prompt})
-        
-        with st.chat_message("user"):
-            st.markdown(prompt)
-        
-        with st.chat_message("assistant"):
-            with st.spinner("🤔 Thinking..."):
-                response = st.session_state.rag.query(
-                    prompt,
-                    ticker=selected_ticker,
-                    k=5,
-                    verbose=False
-                )
-                
-                st.markdown(response['answer'])
-                
-                if st.session_state.db.client:
-                    st.session_state.db.log_chat_query(
-                        ticker=selected_ticker,
-                        query=prompt,
-                        answer=response['answer'],
-                        num_sources=len(response['sources'])
-                    )
-                
-                if response['sources']:
-                    with st.expander("📚 View Sources"):
-                        for i, source in enumerate(response['sources'], 1):
-                            st.markdown(f"""
-                            **Source {i}:** {source['ticker']} - {source['section']} (Chunk {source['chunk_id']})  
-                            **Relevance:** {source['score']:.3f}  
-                            **Preview:** {source['preview']}
-                            """)
-                
-                st.session_state.chat_history.append({
-                    "role": "assistant",
-                    "content": response['answer'],
-                    "sources": response['sources']
-                })
-
-# PAGE: ANOMALIES
-elif page == "🚨 Anomalies":
-    st.markdown(f'<h1 class="main-header">🚨 Anomaly Detection</h1>', unsafe_allow_html=True)
-    st.markdown(f"### Unusual patterns in {companies[selected_ticker]}'s filings")
+    status = get_filing_status_local(manage_ticker)
     
-    filing_count = count_available_filings(selected_ticker)
-    
-    anomaly_files = list(Path("data/anomalies").glob(f"{selected_ticker}_*_anomalies.json"))
-    
-    if not anomaly_files:
-        if filing_count < 2:
-            st.warning(f"⚠️ Limited Data for {selected_ticker}")
-            st.info(f"Only {filing_count} filing(s) available. Need 2+ for anomaly detection.")
-            
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                # Fixed: Actually navigate to Data Management
-                if st.button("📥 Go to Data Management", use_container_width=True, type="primary"):
-                    st.session_state.current_page = "📥 Data Management"
-                    st.rerun()
-            
-            with col2:
-                st.info("Download more filings to enable anomaly detection")
+    if status:
+        data = []
+        for date, info in status.items():
+            data.append({
+                'Date': date,
+                'Year': getattr(info, 'year', date[:4]),
+                'Downloaded': '✓' if getattr(info, 'downloaded', False) else '○',
+                'Parsed': '✓' if getattr(info, 'parsed', False) else '○',
+                'Sections': '✓' if getattr(info, 'sections_extracted', False) else '○',
+                'Sentiment': '✓' if getattr(info, 'sentiment_analyzed', False) else '○',
+                'Complete': '✅' if getattr(info, 'is_complete', False) else '⏳'
+            })
         
-        else:
-            st.info(f"Found {filing_count} filings. Run anomaly detection.")
-            
-            if st.button("🔍 Run Anomaly Detection Now"):
-                with st.spinner("Analyzing..."):
-                    report = st.session_state.anomaly_detector.analyze_ticker(selected_ticker)
-                    
-                    # Fixed: Check if analysis was successful
-                    if 'error' in report:
-                        st.error(f"Analysis failed: {report['error']}")
-                        st.info("💡 Tip: You need at least 2 filings to detect anomalies. Download more filings for this company.")
-                    else:
-                        st.session_state.anomaly_detector.save_report(report)
-                        
-                        if st.session_state.db.client and report.get('anomalies'):
-                            st.session_state.db.insert_anomalies(
-                                ticker=selected_ticker,
-                                filing_date=report['current_filing_date'],
-                                anomalies=report['anomalies']
-                            )
-                        
-                        st.success("Analysis complete!")
-                        st.rerun()
-    else:
-        latest_file = sorted(anomaly_files)[-1]
-        with open(latest_file, 'r') as f:
-            anomaly_data = json.load(f)
+        st.dataframe(pd.DataFrame(data), use_container_width=True, hide_index=True)
         
-        # DON'T re-insert to database here - it causes duplicates on every page load!
+        complete = sum(1 for s in status.values() if getattr(s, 'is_complete', False))
         
-        col1, col2, col3, col4 = st.columns(4)
-        
+        col1, col2, col3 = st.columns(3)
         with col1:
-            st.metric("Total Anomalies", anomaly_data['total_anomalies'])
-        
+            st.metric("Total Filings", len(status))
         with col2:
-            st.metric("High Severity", anomaly_data['anomalies_by_severity']['high'])
-        
+            st.metric("Complete", complete)
         with col3:
-            st.metric("Medium Severity", anomaly_data['anomalies_by_severity']['medium'])
-        
-        with col4:
-            st.metric("Compared To", f"{anomaly_data.get('num_historical_filings', 'N/A')} prior filings")
-        
-        st.markdown("---")
-        
-        anomalies_by_type = {}
-        for anomaly in anomaly_data['anomalies']:
-            atype = anomaly['type']
-            if atype not in anomalies_by_type:
-                anomalies_by_type[atype] = []
-            anomalies_by_type[atype].append(anomaly)
-        
-        for atype, anomalies in anomalies_by_type.items():
-            st.markdown(f"### {atype.replace('_', ' ').title()}")
-            
-            for anomaly in anomalies:
-                severity = anomaly.get('severity', 'medium')
-                icon = '🔴' if severity == 'high' else '🟡' if severity == 'medium' else '🟢'
-                
-                with st.expander(f"{icon} {anomaly['description']}", expanded=True):
-                    col_a, col_b = st.columns([2, 1])
-                    
-                    with col_a:
-                        st.markdown(f"**Type:** {anomaly['type'].replace('_', ' ').title()}")
-                        st.markdown(f"**Severity:** {severity.upper()}")
-                        
-                        # Show context if available
-                        if 'context_snippets' in anomaly and anomaly['context_snippets']:
-                            st.markdown("**📄 Context from Filing:**")
-                            for snippet in anomaly['context_snippets'][:3]:
-                                st.info(f"_{snippet}_")
-                        
-                        if 'comparison_details' in anomaly:
-                            st.markdown("**📊 Comparison:**")
-                            st.markdown(anomaly['comparison_details'])
-                        
-                        if 'historical_years' in anomaly:
-                            st.markdown(f"**📅 Historical Years:** {', '.join(anomaly['historical_years'])}")
-                    
-                    with col_b:
-                        if 'current_count' in anomaly:
-                            st.metric("Current", anomaly['current_count'])
-                        if 'average_count' in anomaly:
-                            st.metric("Hist. Avg", f"{anomaly['average_count']:.1f}")
-                        if 'ratio' in anomaly:
-                            change = "↑" if anomaly['ratio'] > 1 else "↓"
-                            st.metric("Change", f"{anomaly['ratio']:.1f}x {change}")
-                    
-                    with st.expander("📋 Raw Data", expanded=False):
-                        st.json(anomaly)
-
-# PAGE: ANALYTICS
-elif page == "📊 Analytics":
-    st.markdown(f'<h1 class="main-header">📊 Analytics</h1>', unsafe_allow_html=True)
-    st.markdown("### Usage Statistics & Insights")
-    
-    if not st.session_state.db.client:
-        st.warning("⚠️ Database not connected. Analytics require Supabase connection.")
+            st.metric("Pending", len(status) - complete)
     else:
-        st.markdown("---")
+        st.info(f"No filings found for {manage_ticker}")
+    
+    st.markdown("---")
+    
+    # Download section
+    st.markdown("#### 🚀 Download & Process")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        years = st.selectbox(
+            "Years to download",
+            [1, 2, 3, 5, 10],
+            index=2,
+            format_func=lambda x: f"Last {x} year{'s' if x > 1 else ''}",
+            key="download_years"
+        )
+    
+    with col2:
+        auto = st.checkbox("Auto-process", value=True, key="auto_process_check")
+    
+    with col3:
+        st.markdown("<br>", unsafe_allow_html=True)
+        start = st.button("📥 Download", type="primary", use_container_width=True)
+    
+    if start and AutomatedPipeline:
+        pipeline = AutomatedPipeline()
+        progress = st.progress(0)
+        status_text = st.empty()
         
-        col1, col2 = st.columns(2)
+        def update(msg, pct):
+            progress.progress(min(pct / 100, 1.0))
+            status_text.info(f"📊 {msg}")
         
-        with col1:
-            st.markdown("#### 📈 Most Queried Companies")
-            st.info("Coming soon - will show which companies users ask about most")
+        pipeline.set_progress_callback(update)
         
-        with col2:
-            st.markdown("#### 💬 Recent Questions")
-            recent_queries = st.session_state.db.get_popular_queries(limit=5)
+        try:
+            result = pipeline.process_company(manage_ticker, years=years, auto_process=auto)
             
-            if recent_queries:
-                for i, q in enumerate(recent_queries, 1):
-                    st.markdown(f"**{i}.** {q['query']} *(Company: {q.get('ticker', 'N/A')})*")
+            if result.success:
+                status_text.success(f"✅ {result.message}")
+                st.balloons()
             else:
-                st.info("No queries logged yet. Ask some questions in RAG Chat!")
-        
-        st.markdown("---")
-        
-        st.markdown("#### 🚨 High Severity Anomalies (Deduplicated)")
-        high_severity = st.session_state.db.get_anomalies(severity='high', limit=50)
-        
-        if high_severity:
-            # Deduplicate by ticker + filing_date + anomaly_type + description
-            seen = set()
-            unique_anomalies = []
-            for a in high_severity:
-                key = (a.get('ticker', ''), a.get('filing_date', ''), a.get('anomaly_type', ''), a.get('description', ''))
-                if key not in seen:
-                    seen.add(key)
-                    unique_anomalies.append(a)
-            
-            if unique_anomalies:
-                df = pd.DataFrame(unique_anomalies[:10])
-                display_cols = ['ticker', 'filing_date', 'anomaly_type', 'description']
-                display_cols = [c for c in display_cols if c in df.columns]
-                st.dataframe(df[display_cols], use_container_width=True, hide_index=True)
-            else:
-                st.info("No unique high severity anomalies found")
-        else:
-            st.info("No high severity anomalies detected yet")
+                status_text.error(f"❌ {result.message}")
+        except Exception as e:
+            status_text.error(f"Error: {e}")
+    elif start:
+        st.error("Pipeline not available. Check imports.")
 
-# PAGE: DATA MANAGEMENT
-elif page == "📥 Data Management":
-    from automated_pipeline import render_data_management_page
-    render_data_management_page(companies, selected_ticker)
 
 # Footer
 st.markdown("---")
-st.markdown("""
-<div style="text-align: center; color: #94a3b8; font-size: 0.8rem;">
-    AlphaExtract v0.4.0 | Built with Streamlit, OpenSearch, Gemini & Supabase
-</div>
-""", unsafe_allow_html=True)
+st.markdown(
+    '<div style="text-align: center; color: #94a3b8;">AlphaExtract v0.5.1 | '
+    'Built with Streamlit, FinBERT, OpenSearch & Gemini</div>',
+    unsafe_allow_html=True
+)
