@@ -1,16 +1,15 @@
 """
-AlphaExtract Dashboard - v0.5.1 FINAL
+AlphaExtract Dashboard - v0.5.2
 --------------------------------------
 LOCATION: dashboard/app.py
 
-FIXES:
-1. JSON key normalization (handles both "1a" and "item_1a" formats)
-2. Simplified anomaly page (no year comparison)
-3. Enhanced anomaly display with explanations and context
-4. Fixed year selector updating dashboard
-5. Removed st.rerun() from callbacks
+FIXES in v0.5.2:
+1. Force reload AnomalyDetector to pick up code changes
+2. Auto-save anomaly reports to disk
+3. Better debug output for anomaly fields
+4. Improved anomaly card display with all v0.5.1 fields
 
-Version: 0.5.1
+Version: 0.5.2
 """
 
 import streamlit as st
@@ -20,6 +19,7 @@ import json
 import plotly.graph_objects as go
 from datetime import datetime
 import pandas as pd
+import importlib
 
 # Add parent to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -30,9 +30,13 @@ try:
 except:
     EnhancedRAG = None
 
+# FORCE RELOAD anomaly module to pick up changes
 try:
+    import src.models.anomaly as anomaly_module
+    importlib.reload(anomaly_module)
     from src.models.anomaly import AnomalyDetector
-except:
+except Exception as e:
+    print(f"Failed to load AnomalyDetector: {e}")
     AnomalyDetector = None
 
 try:
@@ -121,8 +125,10 @@ if 'rag' not in st.session_state:
         except:
             pass
 
-if 'anomaly_detector' not in st.session_state:
+# ALWAYS create fresh AnomalyDetector to pick up code changes
+if 'anomaly_detector' not in st.session_state or st.session_state.get('_force_reload_detector'):
     st.session_state.anomaly_detector = AnomalyDetector() if AnomalyDetector else None
+    st.session_state._force_reload_detector = False
 
 if 'db' not in st.session_state:
     st.session_state.db = SupabaseDB() if SupabaseDB else None
@@ -223,13 +229,6 @@ def load_sentiment_for_year(ticker: str, year: str = None) -> tuple:
 def get_section_data(sentiment_data: dict, section_key: str) -> dict:
     """
     Safely get section data with fallback for missing keys.
-    
-    Args:
-        sentiment_data: Full sentiment JSON (already normalized)
-        section_key: Key like 'item_1a', 'item_7', 'item_8'
-    
-    Returns:
-        Section data dict or empty dict with defaults
     """
     if not sentiment_data:
         return {'scores': {'compound': 0}, 'signal': 'N/A', 'word_count': 0}
@@ -302,6 +301,89 @@ def get_filing_status_local(ticker: str) -> dict:
     except:
         pass
     return {}
+
+
+def render_anomaly_card(anomaly: dict):
+    """
+    Render a single anomaly with all v0.5.1 enhanced fields.
+    Includes smart fallbacks for missing fields.
+    """
+    # Extract fields with smart fallbacks
+    title = anomaly.get('title') or anomaly.get('keyword', '').replace('_', ' ').title() or 'Anomaly Detected'
+    category = anomaly.get('category') or anomaly.get('type', 'General').replace('_', ' ').title()
+    severity = anomaly.get('severity', 'medium')
+    severity_reason = anomaly.get('severity_reason') or f"Severity: {severity}"
+    description = anomaly.get('description', '')
+    explanation = anomaly.get('explanation') or 'No additional context available.'
+    context = anomaly.get('context', [])
+    
+    # Severity styling
+    if severity == 'high':
+        icon = '🔴'
+    elif severity == 'medium':
+        icon = '🟡'
+    else:
+        icon = '🟢'
+    
+    with st.expander(f"{icon} {title}", expanded=(severity == 'high')):
+        # Category badge
+        st.markdown(f"**Category:** {category}")
+        
+        # Main description
+        if description:
+            st.markdown(f"**What changed:** {description}")
+        
+        st.markdown("---")
+        
+        # Why it matters (the key enhancement in v0.5.1)
+        st.markdown("**Why this matters:**")
+        st.info(explanation)
+        
+        # Severity reasoning
+        st.markdown(f"**Severity ({severity.upper()}):** {severity_reason}")
+        
+        # Context from filing (extracted sentences)
+        if context and len(context) > 0:
+            st.markdown("---")
+            st.markdown("**📄 Context from filing:**")
+            for i, ctx in enumerate(context[:3], 1):
+                # Truncate long sentences
+                display_text = ctx[:400] + "..." if len(ctx) > 400 else ctx
+                st.markdown(f"> _{display_text}_")
+        
+        # Quantitative data if available
+        if 'current_score' in anomaly or 'current_count' in anomaly:
+            st.markdown("---")
+            st.markdown("**📊 Data:**")
+            
+            if 'current_score' in anomaly:
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("Current", f"{anomaly.get('current_score', 0):.3f}")
+                with col2:
+                    st.metric("Previous", f"{anomaly.get('previous_score', 0):.3f}")
+                with col3:
+                    delta = anomaly.get('delta', 0)
+                    st.metric("Change", f"{delta:+.3f}")
+            
+            elif 'current_count' in anomaly:
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("Current Mentions", anomaly.get('current_count', 0))
+                with col2:
+                    avg = anomaly.get('average_count', anomaly.get('historical_count', 0))
+                    label = "Historical Avg" if 'average_count' in anomaly else "Historical Total"
+                    st.metric(label, f"{avg:.1f}" if isinstance(avg, float) else str(avg))
+                with col3:
+                    ratio = anomaly.get('ratio', 1.0)
+                    if ratio >= 1:
+                        st.metric("Change", f"{ratio:.1f}x more")
+                    else:
+                        st.metric("Change", f"{1/ratio:.1f}x less")
+        
+        # Debug: show raw data
+        with st.expander("🔧 Raw JSON (debug)", expanded=False):
+            st.json(anomaly)
 
 
 # ============================================================================
@@ -623,7 +705,7 @@ elif page == "💬 RAG Chat":
 
 
 # ============================================================================
-# PAGE: ANOMALIES - SIMPLIFIED WITH ENHANCED DISPLAY
+# PAGE: ANOMALIES - ENHANCED v0.5.2
 # ============================================================================
 
 elif page == "🚨 Anomalies":
@@ -638,19 +720,35 @@ elif page == "🚨 Anomalies":
     else:
         st.markdown("---")
         
-        # Simple analyze button
-        col1, col2 = st.columns([3, 1])
+        # Control buttons
+        col1, col2, col3 = st.columns([2, 1, 1])
         
         with col1:
-            st.markdown(f"**Comparing:** Latest filing vs historical average ({len(available_years)} years available)")
+            st.markdown(f"**Available data:** {len(available_years)} years of filings")
         
         with col2:
             analyze_btn = st.button("🔍 Analyze", type="primary", use_container_width=True)
         
+        with col3:
+            # Force reload detector button (for debugging)
+            if st.button("🔄 Reload", use_container_width=True, help="Force reload anomaly detector"):
+                st.session_state._force_reload_detector = True
+                st.session_state.anomaly_report = None
+                st.session_state.anomaly_ticker = None
+                st.rerun()
+        
         # Run analysis
         if analyze_btn and st.session_state.anomaly_detector:
             with st.spinner(f"Analyzing {selected_ticker}..."):
-                report = st.session_state.anomaly_detector.analyze_ticker(selected_ticker)
+                # Create fresh detector instance to ensure latest code
+                detector = AnomalyDetector()
+                report = detector.analyze_ticker(selected_ticker)
+                
+                # SAVE REPORT TO DISK
+                if 'error' not in report or report.get('total_anomalies', 0) > 0:
+                    detector.save_report(report)
+                    st.toast(f"Report saved to data/anomalies/", icon="💾")
+                
                 st.session_state.anomaly_report = report
                 st.session_state.anomaly_ticker = selected_ticker
         
@@ -658,19 +756,32 @@ elif page == "🚨 Anomalies":
         report = st.session_state.anomaly_report
         
         if report and st.session_state.anomaly_ticker == selected_ticker:
-            if 'error' in report:
+            if 'error' in report and report.get('total_anomalies', 0) == 0:
                 st.error(f"Error: {report['error']}")
             else:
-                st.success(f"✅ Analysis complete! Comparing {report.get('current_filing_date', 'latest')} to {report.get('compared_to', 'previous')}")
+                # Comparison info header
+                current_date = report.get('current_filing_date', 'latest')
+                compared_to = report.get('compared_to', 'previous')
+                num_historical = report.get('num_historical_filings', 0)
+                
+                st.success(f"✅ Analysis complete!")
+                st.markdown(f"""
+                📅 **Current filing:** `{current_date}`  
+                🔄 **Compared to:** `{compared_to}` (+ {num_historical} historical filing{'s' if num_historical != 1 else ''})
+                """)
+                
+                st.markdown("---")
                 
                 # Metrics
-                col1, col2, col3 = st.columns(3)
+                col1, col2, col3, col4 = st.columns(4)
                 with col1:
                     st.metric("Total Anomalies", report.get('total_anomalies', 0))
                 with col2:
-                    st.metric("🔴 High Severity", report.get('anomalies_by_severity', {}).get('high', 0))
+                    st.metric("🔴 High", report.get('anomalies_by_severity', {}).get('high', 0))
                 with col3:
-                    st.metric("🟡 Medium Severity", report.get('anomalies_by_severity', {}).get('medium', 0))
+                    st.metric("🟡 Medium", report.get('anomalies_by_severity', {}).get('medium', 0))
+                with col4:
+                    st.metric("🟢 Low", report.get('anomalies_by_severity', {}).get('low', 0))
                 
                 st.markdown("---")
                 
@@ -680,46 +791,42 @@ elif page == "🚨 Anomalies":
                 if not anomalies:
                     st.success("✅ No anomalies detected - filing appears consistent with historical patterns!")
                 else:
-                    st.markdown("### Detected Anomalies")
+                    st.markdown("### 📋 Detected Anomalies")
+                    st.caption("Click to expand each anomaly for full details and context.")
                     
-                    for anomaly in anomalies:
-                        severity = anomaly.get('severity', 'medium')
-                        
-                        # Icon and color based on severity
-                        if severity == 'high':
-                            icon = '🔴'
-                            border_color = '#ef4444'
-                        elif severity == 'medium':
-                            icon = '🟡'
-                            border_color = '#f59e0b'
-                        else:
-                            icon = '🟢'
-                            border_color = '#22c55e'
-                        
-                        # Anomaly card
-                        with st.expander(f"{icon} {anomaly.get('title', 'Anomaly')}", expanded=(severity == 'high')):
-                            # Category and description
-                            st.markdown(f"**Category:** {anomaly.get('category', 'General')}")
-                            st.markdown(f"**{anomaly.get('description', '')}**")
-                            
-                            st.markdown("---")
-                            
-                            # Why it matters
-                            st.markdown("**Why this matters:**")
-                            st.markdown(f"> {anomaly.get('explanation', 'N/A')}")
-                            
-                            # Severity reasoning
-                            st.markdown(f"**Severity ({severity}):** {anomaly.get('severity_reason', 'N/A')}")
-                            
-                            # Context from filing (if available)
-                            context = anomaly.get('context', [])
-                            if context:
-                                st.markdown("---")
-                                st.markdown("**Context from filing:**")
-                                for ctx in context[:2]:
-                                    st.markdown(f'> *"{ctx[:300]}{"..." if len(ctx) > 300 else ""}"*')
+                    # Group by severity
+                    high = [a for a in anomalies if a.get('severity') == 'high']
+                    medium = [a for a in anomalies if a.get('severity') == 'medium']
+                    low = [a for a in anomalies if a.get('severity') == 'low']
+                    
+                    if high:
+                        st.markdown("#### 🔴 High Severity")
+                        for anomaly in high:
+                            render_anomaly_card(anomaly)
+                    
+                    if medium:
+                        st.markdown("#### 🟡 Medium Severity")
+                        for anomaly in medium:
+                            render_anomaly_card(anomaly)
+                    
+                    if low:
+                        st.markdown("#### 🟢 Low Severity")
+                        for anomaly in low:
+                            render_anomaly_card(anomaly)
         else:
             st.info("👆 Click **Analyze** to detect anomalies in the latest filing")
+            
+            # Show if there's a cached report on disk
+            anomaly_dir = Path("data/anomalies")
+            cached_files = list(anomaly_dir.glob(f"{selected_ticker}_*_anomalies.json"))
+            if cached_files:
+                st.caption(f"📁 Found {len(cached_files)} cached report(s) on disk")
+                if st.button("Load latest cached report"):
+                    latest = sorted(cached_files)[-1]
+                    with open(latest, 'r') as f:
+                        st.session_state.anomaly_report = json.load(f)
+                        st.session_state.anomaly_ticker = selected_ticker
+                    st.rerun()
 
 
 # ============================================================================
@@ -873,7 +980,7 @@ elif page == "📥 Data Management":
 # Footer
 st.markdown("---")
 st.markdown(
-    '<div style="text-align: center; color: #94a3b8;">AlphaExtract v0.5.1 | '
+    '<div style="text-align: center; color: #94a3b8;">AlphaExtract v0.5.2 | '
     'Built with Streamlit, FinBERT, OpenSearch & Gemini</div>',
     unsafe_allow_html=True
 )

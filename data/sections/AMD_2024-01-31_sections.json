@@ -1,0 +1,26 @@
+{
+  "ticker": "AMD",
+  "filing_date": "2024-01-31",
+  "sections_found": [
+    "item_1a",
+    "item_7",
+    "item_8"
+  ],
+  "section_stats": {
+    "item_1a": {
+      "chars": 439062,
+      "words": 56069,
+      "lines": 427
+    },
+    "item_7": {
+      "chars": 299266,
+      "words": 35314,
+      "lines": 407
+    },
+    "item_8": {
+      "chars": 245281,
+      "words": 28240,
+      "lines": 389
+    }
+  }
+}

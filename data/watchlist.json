@@ -5,5 +5,12 @@
     "cik": "0001045810",
     "added_date": "2026-01-25T16:31:41.173957",
     "exchange": "Nasdaq"
+  },
+  {
+    "ticker": "AMD",
+    "name": "ADVANCED MICRO DEVICES INC",
+    "cik": "0000002488",
+    "added_date": "2026-01-27T13:21:17.627185",
+    "exchange": "Nasdaq"
   }
 ]

@@ -1,0 +1,29 @@
+{
+  "sections": {
+    "1a": {
+      "scores": {
+        "compound": 0.15121280141174792
+      },
+      "signal": "HOLD",
+      "word_count": 56069
+    },
+    "7": {
+      "scores": {
+        "compound": 0.20452384008094668
+      },
+      "signal": "BUY",
+      "word_count": 35314
+    },
+    "8": {
+      "scores": {
+        "compound": 0.4927775155752897
+      },
+      "signal": "BUY",
+      "word_count": 28240
+    }
+  },
+  "overall": {
+    "compound": 0.28283805235599474,
+    "signal": "BUY"
+  }
+}

@@ -1,0 +1,58 @@
+{
+  "ticker": "MSFT",
+  "current_filing_date": "2025-07-30",
+  "compared_to": "2024-07-30",
+  "num_historical_filings": 2,
+  "total_anomalies": 3,
+  "anomalies_by_severity": {
+    "high": 1,
+    "medium": 0,
+    "low": 2
+  },
+  "anomalies": [
+    {
+      "type": "new_keyword",
+      "category": "Trade Policy",
+      "severity": "high",
+      "severity_reason": "First-time mention indicates new area of focus or concern",
+      "title": "NEW: Tariff",
+      "description": "First mention of 'tariff' (1 occurrences)",
+      "explanation": "Tariff mentions indicate exposure to trade policy changes, which can impact margins and supply chain costs.",
+      "keyword": "tariff",
+      "count": 1,
+      "context": [
+        "tariff and shifting AI export controls policies, like the AI Diffusion Rule, could increase operational costs, create uncertainty in the continuity of our products, and accelerate sovereignty initiatives among international partners and customers.",
+        "tariffs has triggered economic uncertainty and could impact cloud and devices supply chain cost competitiveness."
+      ]
+    },
+    {
+      "type": "frequency_decrease",
+      "category": "Geopolitical Risk",
+      "severity": "low",
+      "severity_reason": "Topic mentioned 3.0x less than usual",
+      "title": "China - Reduced Focus",
+      "description": "'china' mentioned 3.0x less (1 vs 3 previously)",
+      "explanation": "Reduced discussion of this topic may indicate resolved concerns or shifted priorities.",
+      "keyword": "china",
+      "current_count": 1,
+      "average_count": 3.0,
+      "ratio": 0.33,
+      "context": []
+    },
+    {
+      "type": "frequency_decrease",
+      "category": "Operational",
+      "severity": "low",
+      "severity_reason": "Topic mentioned 3.1x less than usual",
+      "title": "Layoffs - Reduced Focus",
+      "description": "'layoffs' mentioned 3.1x less (4 vs 12 previously)",
+      "explanation": "Reduced discussion of this topic may indicate resolved concerns or shifted priorities.",
+      "keyword": "layoffs",
+      "current_count": 4,
+      "average_count": 12.5,
+      "ratio": 0.32,
+      "context": []
+    }
+  ],
+  "analysis_date": "2026-01-27T13:20:19.177987"
+}
