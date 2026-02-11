@@ -1,15 +1,5 @@
 """
-AlphaExtract Dashboard - v0.5.2
---------------------------------------
-LOCATION: dashboard/app.py
-
-FIXES in v0.5.2:
-1. Force reload AnomalyDetector to pick up code changes
-2. Auto-save anomaly reports to disk
-3. Better debug output for anomaly fields
-4. Improved anomaly card display with all v0.5.1 fields
-
-Version: 0.5.2
+AlphaExtract Dashboard - v1.0.0
 """
 
 import streamlit as st
@@ -19,7 +9,6 @@ import json
 import plotly.graph_objects as go
 from datetime import datetime
 import pandas as pd
-import importlib
 
 # Add parent to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -27,36 +16,32 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 # Imports with error handling
 try:
     from src.rag.enhanced_rag import EnhancedRAG
-except:
+except Exception:
     EnhancedRAG = None
 
-# FORCE RELOAD anomaly module to pick up changes
 try:
-    import src.models.anomaly as anomaly_module
-    importlib.reload(anomaly_module)
     from src.models.anomaly import AnomalyDetector
-except Exception as e:
-    print(f"Failed to load AnomalyDetector: {e}")
+except Exception:
     AnomalyDetector = None
 
 try:
     from src.database.supabase_client import SupabaseDB
-except:
+except Exception:
     SupabaseDB = None
 
 try:
     from src.data.company_search import CompanySearch
-except:
+except Exception:
     CompanySearch = None
 
 try:
     from src.pipeline.automated import (
-        AutomatedPipeline, 
-        get_filing_status, 
+        AutomatedPipeline,
+        get_filing_status,
         get_available_years,
         get_all_sentiment_data
     )
-except:
+except Exception:
     AutomatedPipeline = None
     get_filing_status = None
     get_available_years = lambda x: []
@@ -122,13 +107,11 @@ if 'rag' not in st.session_state:
     if EnhancedRAG:
         try:
             st.session_state.rag = EnhancedRAG()
-        except:
-            pass
+        except Exception as e:
+            print(f"RAG init failed: {e}")
 
-# ALWAYS create fresh AnomalyDetector to pick up code changes
-if 'anomaly_detector' not in st.session_state or st.session_state.get('_force_reload_detector'):
+if 'anomaly_detector' not in st.session_state:
     st.session_state.anomaly_detector = AnomalyDetector() if AnomalyDetector else None
-    st.session_state._force_reload_detector = False
 
 if 'db' not in st.session_state:
     st.session_state.db = SupabaseDB() if SupabaseDB else None
@@ -247,22 +230,22 @@ def get_historical_sentiment(ticker: str) -> list:
     """Get all historical sentiment data for trend chart."""
     try:
         sentiment_data = get_all_sentiment_data(ticker)
-    except:
+    except Exception:
         sentiment_data = []
-    
+
     if not sentiment_data:
         # Fallback: manually load files
         sentiment_dir = Path("data/sentiment")
         files = sorted(sentiment_dir.glob(f"{ticker}_*_sentiment.json"))
-        
+
         sentiment_data = []
         for f in files:
             try:
                 with open(f, 'r') as fp:
-                    data = json.load(f)
+                    data = json.load(fp)
                     filing_date = f.stem.split('_')[1]
                     sentiment_data.append((filing_date, data))
-            except:
+            except Exception:
                 pass
     
     history = []
@@ -281,7 +264,7 @@ def get_available_years_local(ticker: str) -> list:
     """Get available years for a ticker (fallback if pipeline not imported)."""
     try:
         return get_available_years(ticker)
-    except:
+    except Exception:
         sentiment_dir = Path("data/sentiment")
         files = list(sentiment_dir.glob(f"{ticker}_*_sentiment.json"))
         years = set()
@@ -298,7 +281,7 @@ def get_filing_status_local(ticker: str) -> dict:
     try:
         if get_filing_status:
             return get_filing_status(ticker)
-    except:
+    except Exception:
         pass
     return {}
 
@@ -980,7 +963,7 @@ elif page == "📥 Data Management":
 # Footer
 st.markdown("---")
 st.markdown(
-    '<div style="text-align: center; color: #94a3b8;">AlphaExtract v0.5.2 | '
+    '<div style="text-align: center; color: #94a3b8;">AlphaExtract v1.0.0 | '
     'Built with Streamlit, FinBERT, OpenSearch & Gemini</div>',
     unsafe_allow_html=True
 )
