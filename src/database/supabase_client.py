@@ -1,210 +1,130 @@
 """
 Supabase Database Client
-------------------------
-Connects to Supabase and manages data persistence.
-Now with upsert support to prevent duplicates.
+-------------------------
+Manages data persistence for sentiment results and anomaly reports.
 """
 
-import os
-from supabase import create_client, Client
-from datetime import datetime
-from typing import Dict, List, Optional
-import logging
 import hashlib
+import json
+import logging
+from typing import Dict, List, Optional
 
-logging.basicConfig(level=logging.INFO)
+from src.config.settings import Settings
+
 logger = logging.getLogger(__name__)
 
 
 class SupabaseDB:
-    """Supabase database client for AlphaExtract."""
-    
-    def __init__(self, url: str = None, key: str = None):
-        self.url = url or os.getenv('SUPABASE_URL')
-        self.key = key or os.getenv('SUPABASE_KEY')
-        
-        if not self.url or not self.key:
-            logger.warning("Supabase credentials not found")
-            self.client = None
-            return
-        
-        try:
-            self.client: Client = create_client(self.url, self.key)
-            logger.info("Connected to Supabase")
-        except Exception as e:
-            logger.error(f"Failed to connect to Supabase: {e}")
-            self.client = None
-    
-    def upsert_company(self, ticker: str, name: str, sector: str = None) -> bool:
-        if not self.client:
+    """Client for Supabase PostgreSQL operations."""
+
+    def __init__(self):
+        self._client = None
+
+    @property
+    def client(self):
+        if self._client is None:
+            if not Settings.SUPABASE_URL or not Settings.SUPABASE_KEY:
+                logger.warning("Supabase credentials not configured — database operations disabled")
+                return None
+            try:
+                from supabase import create_client
+                self._client = create_client(Settings.SUPABASE_URL, Settings.SUPABASE_KEY)
+                logger.info("Connected to Supabase")
+            except Exception as e:
+                logger.error(f"Failed to connect to Supabase: {e}")
+                return None
+        return self._client
+
+    @property
+    def available(self) -> bool:
+        return self.client is not None
+
+    def save_sentiment(self, ticker: str, filing_date: str, data: Dict) -> bool:
+        """Save or update sentiment analysis results."""
+        if not self.available:
             return False
-        
         try:
-            data = {
-                'ticker': ticker.upper(),
-                'name': name,
-                'sector': sector,
-                'updated_at': datetime.utcnow().isoformat()
+            record = {
+                "ticker": ticker.upper(),
+                "filing_date": filing_date,
+                "overall_score": data.get("overall", {}).get("compound", 0),
+                "overall_signal": data.get("overall", {}).get("signal", "HOLD"),
+                "raw_data": json.dumps(data),
             }
-            self.client.table('companies').upsert(data).execute()
+            self.client.table("sentiment_results").upsert(
+                record, on_conflict="ticker,filing_date"
+            ).execute()
+            logger.info(f"Saved sentiment to DB: {ticker} {filing_date}")
             return True
         except Exception as e:
-            logger.error(f"Failed to upsert company {ticker}: {e}")
+            logger.error(f"Failed to save sentiment for {ticker} {filing_date}: {e}")
             return False
-    
-    def insert_sentiment(self, ticker: str, filing_date: str, sentiment_data: Dict) -> bool:
-        if not self.client:
+
+    def save_anomalies(self, report: Dict) -> bool:
+        """Save anomaly detection report."""
+        if not self.available:
             return False
-        
         try:
-            overall = sentiment_data.get('overall', {})
-            sections = sentiment_data.get('sections', {})
-            
-            data = {
-                'ticker': ticker.upper(),
-                'filing_date': filing_date,
-                'overall_compound': overall.get('compound', 0),
-                'overall_signal': overall.get('signal', 'HOLD'),
-                'item_1a_compound': sections.get('item_1a', {}).get('scores', {}).get('compound'),
-                'item_1a_signal': sections.get('item_1a', {}).get('signal'),
-                'item_7_compound': sections.get('item_7', {}).get('scores', {}).get('compound'),
-                'item_7_signal': sections.get('item_7', {}).get('signal'),
-                'item_8_compound': sections.get('item_8', {}).get('scores', {}).get('compound'),
-                'item_8_signal': sections.get('item_8', {}).get('signal'),
-                'raw_data': sentiment_data,
-                'created_at': datetime.utcnow().isoformat()
-            }
-            
-            self.client.table('sentiment_scores').upsert(data, on_conflict='ticker,filing_date').execute()
-            return True
-        except Exception as e:
-            if '23505' in str(e) or 'duplicate' in str(e).lower():
-                return True
-            logger.error(f"Failed to insert sentiment: {e}")
-            return False
-    
-    def get_sentiment_history(self, ticker: str, limit: int = 10) -> List[Dict]:
-        if not self.client:
-            return []
-        
-        try:
-            result = self.client.table('sentiment_scores').select('*').eq('ticker', ticker.upper()).order('filing_date', desc=True).limit(limit).execute()
-            return result.data
-        except Exception as e:
-            logger.error(f"Failed to get sentiment history: {e}")
-            return []
-    
-    def _generate_anomaly_hash(self, ticker: str, filing_date: str, anomaly: Dict) -> str:
-        unique_str = f"{ticker}_{filing_date}_{anomaly.get('type', '')}_{anomaly.get('keyword', '')}_{anomaly.get('description', '')[:100]}"
-        return hashlib.md5(unique_str.encode()).hexdigest()[:16]
-    
-    def insert_anomalies(self, ticker: str, filing_date: str, anomalies: List[Dict]) -> bool:
-        if not self.client:
-            return False
-        
-        try:
-            for anomaly in anomalies:
-                anomaly_hash = self._generate_anomaly_hash(ticker, filing_date, anomaly)
-                
+            ticker = report.get("ticker", "")
+            filing_date = report.get("current_filing_date", "")
+
+            for anomaly in report.get("anomalies", []):
+                anomaly_hash = hashlib.sha256(
+                    f"{ticker}:{filing_date}:{anomaly.get('type')}:{anomaly.get('title')}".encode()
+                ).hexdigest()[:32]
+
                 record = {
-                    'ticker': ticker.upper(),
-                    'filing_date': filing_date,
-                    'anomaly_type': anomaly.get('type'),
-                    'severity': anomaly.get('severity', 'medium'),
-                    'description': anomaly.get('description'),
-                    'anomaly_hash': anomaly_hash,
-                    'details': anomaly,
-                    'created_at': datetime.utcnow().isoformat()
+                    "ticker": ticker,
+                    "filing_date": filing_date,
+                    "anomaly_hash": anomaly_hash,
+                    "type": anomaly.get("type", ""),
+                    "title": anomaly.get("title", ""),
+                    "severity": anomaly.get("severity", "medium"),
+                    "description": anomaly.get("description", ""),
+                    "raw_data": json.dumps(anomaly),
                 }
-                
-                try:
-                    self.client.table('anomalies').upsert(record, on_conflict='anomaly_hash').execute()
-                except Exception as inner_e:
-                    if '23505' not in str(inner_e) and 'duplicate' not in str(inner_e).lower():
-                        logger.warning(f"Anomaly upsert issue: {inner_e}")
-            
+                self.client.table("anomalies").upsert(
+                    record, on_conflict="anomaly_hash"
+                ).execute()
+
+            logger.info(f"Saved {len(report.get('anomalies', []))} anomalies to DB for {ticker}")
             return True
         except Exception as e:
-            logger.error(f"Failed to insert anomalies: {e}")
+            logger.error(f"Failed to save anomalies: {e}")
             return False
-    
-    def get_anomalies(self, ticker: str = None, severity: str = None, limit: int = 50) -> List[Dict]:
-        if not self.client:
+
+    def get_sentiment_history(self, ticker: str) -> List[Dict]:
+        """Get all sentiment records for a ticker, ordered by date."""
+        if not self.available:
             return []
-        
         try:
-            query = self.client.table('anomalies').select('*')
-            
-            if ticker:
-                query = query.eq('ticker', ticker.upper())
-            if severity:
-                query = query.eq('severity', severity)
-            
-            result = query.order('created_at', desc=True).limit(limit).execute()
-            
-            # Deduplicate
-            seen = set()
-            unique = []
-            for item in result.data:
-                key = item.get('anomaly_hash') or f"{item.get('ticker')}_{item.get('filing_date')}_{item.get('description', '')[:30]}"
-                if key not in seen:
-                    seen.add(key)
-                    unique.append(item)
-            
-            return unique
+            result = (
+                self.client.table("sentiment_results")
+                .select("*")
+                .eq("ticker", ticker.upper())
+                .order("filing_date", desc=True)
+                .limit(50)
+                .execute()
+            )
+            return result.data or []
         except Exception as e:
-            logger.error(f"Failed to get anomalies: {e}")
+            logger.error(f"Failed to get sentiment history for {ticker}: {e}")
             return []
-    
-    def log_chat_query(self, ticker: str, query: str, answer: str, num_sources: int = 0) -> bool:
-        if not self.client:
-            return False
-        
+
+    def get_anomalies(self, ticker: str, limit: int = 50) -> List[Dict]:
+        """Get anomaly records for a ticker."""
+        if not self.available:
+            return []
         try:
-            data = {
-                'ticker': ticker.upper() if ticker else None,
-                'query': query,
-                'answer': answer,
-                'num_sources': num_sources,
-                'created_at': datetime.utcnow().isoformat()
-            }
-            self.client.table('chat_queries').insert(data).execute()
-            return True
+            result = (
+                self.client.table("anomalies")
+                .select("*")
+                .eq("ticker", ticker.upper())
+                .order("filing_date", desc=True)
+                .limit(limit)
+                .execute()
+            )
+            return result.data or []
         except Exception as e:
-            logger.error(f"Failed to log query: {e}")
-            return False
-    
-    def get_popular_queries(self, limit: int = 10) -> List[Dict]:
-        if not self.client:
+            logger.error(f"Failed to get anomalies for {ticker}: {e}")
             return []
-        
-        try:
-            result = self.client.table('chat_queries').select('query, ticker').limit(limit).execute()
-            return result.data
-        except Exception as e:
-            logger.error(f"Failed to get popular queries: {e}")
-            return []
-
-
-# SQL schema for Supabase - add anomaly_hash column and unique constraint
-SQL_SCHEMA_UPDATE = """
--- Add anomaly_hash column if not exists
-ALTER TABLE anomalies ADD COLUMN IF NOT EXISTS anomaly_hash VARCHAR(16);
-
--- Create unique index on anomaly_hash
-CREATE UNIQUE INDEX IF NOT EXISTS idx_anomalies_hash ON anomalies(anomaly_hash);
-
--- Update existing records with hash (run once)
--- UPDATE anomalies SET anomaly_hash = md5(ticker || filing_date || anomaly_type || description)::varchar(16) WHERE anomaly_hash IS NULL;
-"""
-
-if __name__ == "__main__":
-    print("Supabase Client")
-    print("Run this SQL in Supabase to add deduplication support:")
-    print(SQL_SCHEMA_UPDATE)
-    
-    db = SupabaseDB()
-    if db.client:
-        print("Connected successfully!")
-    else:
-        print("Connection failed - check credentials")

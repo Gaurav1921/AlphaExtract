@@ -1,270 +1,89 @@
 """
-Embedding Generator & Ingestion Pipeline
------------------------------------------
-Generates vector embeddings and uploads to OpenSearch.
-
-Model: all-MiniLM-L6-v2
-- 384 dimensions
-- 22M parameters
-- Fast inference (1000 docs/sec on CPU)
-- Good quality for semantic search
+Embedding Pipeline
+-------------------
+Generates vector embeddings for document chunks and indexes them in OpenSearch.
 """
 
-from sentence_transformers import SentenceTransformer
-from pathlib import Path
-from typing import List, Dict
-import json
 import logging
-from tqdm import tqdm
-import numpy as np
+from pathlib import Path
+from typing import Dict, List
 
-from src.search.opensearch_client import OpenSearchManager
-from src.data.chunker import DocumentChunker
+from src.config.settings import Settings
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
 class EmbeddingPipeline:
-    """
-    End-to-end pipeline: Chunk → Embed → Index
-    """
-    
-    def __init__(
-        self,
-        model_name: str = "all-MiniLM-L6-v2",
-        opensearch_host: str = "localhost",
-        opensearch_port: int = 9200,
-        index_name: str = "alphaextract-docs"
-    ):
-        """
-        Initialize embedding model and OpenSearch connection.
-        
-        Args:
-            model_name: SentenceTransformer model name
-            opensearch_host: OpenSearch host
-            opensearch_port: OpenSearch port
-            index_name: Index name
-        """
-        logger.info("Initializing embedding pipeline...")
-        
-        # Load embedding model
-        logger.info(f"Loading model: {model_name}")
-        self.model = SentenceTransformer(model_name)
-        self.embedding_dim = self.model.get_sentence_embedding_dimension()
-        logger.info(f"✓ Model loaded ({self.embedding_dim}D embeddings)")
-        
-        # Initialize OpenSearch
-        self.opensearch = OpenSearchManager(
-            host=opensearch_host,
-            port=opensearch_port,
-            index_name=index_name
-        )
-        
-        # Initialize chunker
-        self.chunker = DocumentChunker()
-    
-    def generate_embeddings(self, texts: List[str], batch_size: int = 32) -> np.ndarray:
-        """
-        Generate embeddings for a list of texts.
-        
-        Args:
-            texts: List of text strings
-            batch_size: Batch size for inference
-            
-        Returns:
-            Array of embeddings (shape: [len(texts), embedding_dim])
-        """
-        embeddings = self.model.encode(
-            texts,
-            batch_size=batch_size,
-            show_progress_bar=True,
-            convert_to_numpy=True
-        )
-        
-        return embeddings
-    
-    def prepare_documents(self, chunks: List[Dict]) -> List[Dict]:
-        """
-        Add embeddings to chunk documents.
-        
-        Args:
-            chunks: List of chunk documents (without embeddings)
-            
-        Returns:
-            List of documents with embeddings
-        """
-        logger.info(f"Generating embeddings for {len(chunks)} chunks...")
-        
-        # Extract texts
-        texts = [chunk['text'] for chunk in chunks]
-        
-        # Generate embeddings
+    """Generate embeddings and index into OpenSearch."""
+
+    def __init__(self, model_name: str = None, batch_size: int = None):
+        self.model_name = model_name or Settings.EMBEDDING_MODEL
+        self.batch_size = batch_size or Settings.EMBEDDING_BATCH_SIZE
+        self._model = None
+        self._os_client = None
+
+    @property
+    def model(self):
+        if self._model is None:
+            from sentence_transformers import SentenceTransformer
+            logger.info(f"Loading embedding model: {self.model_name}")
+            self._model = SentenceTransformer(self.model_name)
+        return self._model
+
+    @property
+    def os_client(self):
+        if self._os_client is None:
+            from src.search.opensearch_client import OpenSearchClient
+            self._os_client = OpenSearchClient()
+        return self._os_client
+
+    def generate_embeddings(self, texts: List[str]) -> List[List[float]]:
+        """Generate embeddings for a list of texts."""
+        if not texts:
+            return []
+        embeddings = self.model.encode(texts, batch_size=self.batch_size, show_progress_bar=False)
+        return [emb.tolist() for emb in embeddings]
+
+    def embed_documents(self, documents: List[Dict]) -> List[Dict]:
+        """Add embeddings to document dicts."""
+        texts = [doc["text"] for doc in documents]
         embeddings = self.generate_embeddings(texts)
-        
-        # Add embeddings to documents
-        documents = []
-        for chunk, embedding in zip(chunks, embeddings):
-            doc = chunk.copy()
-            doc['embedding'] = embedding.tolist()
-            documents.append(doc)
-        
-        logger.info(f"✓ Generated {len(documents)} embeddings")
+
+        for doc, emb in zip(documents, embeddings):
+            doc["embedding"] = emb
+
         return documents
-    
-    def index_documents(self, documents: List[Dict], batch_size: int = 100):
-        """
-        Bulk index documents to OpenSearch.
-        
-        Args:
-            documents: List of documents with embeddings
-            batch_size: Batch size for bulk indexing
-        """
-        logger.info(f"Indexing {len(documents)} documents to OpenSearch...")
-        
-        total_success = 0
-        total_failed = 0
-        
-        # Process in batches
-        for i in tqdm(range(0, len(documents), batch_size), desc="Indexing"):
-            batch = documents[i:i + batch_size]
-            success, failed = self.opensearch.bulk_index(batch)
-            total_success += success
-            total_failed += failed
-        
-        logger.info(f"✓ Indexed {total_success} documents ({total_failed} failed)")
-    
-    def process_directory(
-        self,
-        sections_dir: Path,
-        recreate_index: bool = False
-    ):
-        """
-        Complete pipeline: Chunk → Embed → Index
-        
-        Args:
-            sections_dir: Directory with section .txt files
-            recreate_index: If True, delete and recreate index
-        """
-        logger.info(f"\n{'='*80}")
-        logger.info("EMBEDDING PIPELINE START")
-        logger.info(f"{'='*80}")
-        
-        # Step 1: Create/verify index
-        logger.info("\n[1] Setting up OpenSearch index...")
-        self.opensearch.create_index(
-            embedding_dim=self.embedding_dim,
-            force=recreate_index
-        )
-        
-        # Step 2: Chunk documents
-        logger.info("\n[2] Chunking documents...")
-        chunks, summary = self.chunker.chunk_directory(sections_dir)
-        
-        # Step 3: Generate embeddings
-        logger.info("\n[3] Generating embeddings...")
-        documents = self.prepare_documents(chunks)
-        
-        # Step 4: Index to OpenSearch
-        logger.info("\n[4] Indexing to OpenSearch...")
-        self.index_documents(documents)
-        
-        # Step 5: Verify
-        logger.info("\n[5] Verifying index...")
-        stats = self.opensearch.get_stats()
-        
-        logger.info(f"\n{'='*80}")
-        logger.info("PIPELINE COMPLETE ✓")
-        logger.info(f"{'='*80}")
-        logger.info(f"  Documents indexed: {stats['document_count']}")
-        logger.info(f"  Index size: {stats['size_mb']} MB")
-        logger.info(f"  Embedding dimension: {self.embedding_dim}D")
-        
-        return stats
-    
-    def index_single_company(
-        self,
-        ticker: str,
-        sections_dir: Path = None
-    ):
-        """
-        Index documents for a single company.
-        
-        Args:
-            ticker: Stock ticker
-            sections_dir: Directory with section files
-        """
-        if sections_dir is None:
-            sections_dir = Path("data/sections")
-        
-        # Find files for this ticker
-        section_files = list(sections_dir.glob(f"{ticker}_*_item_*.txt"))
-        
-        if not section_files:
-            logger.error(f"No files found for ticker: {ticker}")
-            return
-        
-        logger.info(f"Found {len(section_files)} files for {ticker}")
-        
-        # Chunk files
-        chunks = []
-        for filepath in section_files:
-            file_chunks = self.chunker.chunk_file(filepath)
-            chunks.extend(file_chunks)
-        
-        # Generate embeddings and index
-        documents = self.prepare_documents(chunks)
-        self.index_documents(documents)
-        
-        logger.info(f"✓ Indexed {len(documents)} chunks for {ticker}")
 
+    def index_documents(self, documents: List[Dict]) -> Dict:
+        """Embed and index documents into OpenSearch."""
+        if not documents:
+            return {"indexed": 0, "failed": 0}
 
-# ============================================================================
-# TESTING
-# ============================================================================
+        embedded_docs = self.embed_documents(documents)
+        return self.os_client.bulk_index(embedded_docs)
 
-if __name__ == "__main__":
-    print("=" * 80)
-    print("EMBEDDING PIPELINE TEST")
-    print("=" * 80)
-    
-    # Initialize pipeline
-    print("\n[1] Initializing pipeline...")
-    pipeline = EmbeddingPipeline()
-    
-    # Process all documents
-    sections_dir = Path("data/sections")
-    
-    if not sections_dir.exists():
-        print(f"\n❌ Directory not found: {sections_dir}")
-        exit(1)
-    
-    # Ask user if they want to recreate index
-    print("\n[2] Index setup:")
-    stats = pipeline.opensearch.get_stats()
-    
-    if stats['exists']:
-        print(f"  Existing index found:")
-        print(f"    Documents: {stats['document_count']}")
-        print(f"    Size: {stats['size_mb']} MB")
-        
-        response = input("\n  Recreate index? (y/n): ")
-        recreate = response.lower() == 'y'
-    else:
-        print("  No existing index found")
-        recreate = True
-    
-    # Run pipeline
-    print("\n[3] Running pipeline...")
-    final_stats = pipeline.process_directory(
-        sections_dir=sections_dir,
-        recreate_index=recreate
-    )
-    
-    print("\n" + "=" * 80)
-    print("Ready for RAG queries!")
-    print("=" * 80)
-    print("\nNext steps:")
-    print("1. Test semantic search")
-    print("2. Integrate with Gemini")
-    print("3. Build query interface")
+    def index_from_sections(self, ticker: str = None) -> Dict:
+        """Generate chunks, embed, and index from section files."""
+        from src.data.chunker import DocumentChunker
+
+        chunker = DocumentChunker()
+        sections_dir = Settings.SECTIONS_DIR
+
+        if ticker:
+            files = sorted(sections_dir.glob(f"{ticker.upper()}_*_item_*.txt"))
+        else:
+            files = sorted(sections_dir.glob("*_item_*.txt"))
+
+        if not files:
+            logger.warning("No section files found to index")
+            return {"indexed": 0, "failed": 0}
+
+        all_docs: List[Dict] = []
+        for filepath in files:
+            try:
+                all_docs.extend(chunker.chunk_file(filepath))
+            except Exception as e:
+                logger.error(f"Failed to chunk {filepath.name}: {e}")
+
+        logger.info(f"Embedding and indexing {len(all_docs)} chunks from {len(files)} files")
+        return self.index_documents(all_docs)

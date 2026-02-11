@@ -1,676 +1,296 @@
 """
-Enhanced Anomaly Detection Engine - v0.5.1
-------------------------------------------
-LOCATION: src/models/anomaly.py
-
-Detects unusual patterns by comparing current filings to historical data.
-Now includes detailed explanations and context extraction.
-
-Anomaly Types:
-1. New keyword mentions (first appearance)
-2. Sentiment shifts (compared to previous quarters)
-3. Keyword frequency changes (3x+ increase/decrease)
-4. Topic disappearances (mentioned before, now missing)
-
-CHANGES in v0.5.1:
-- Removed year comparison (simplified to latest vs history)
-- Added KEYWORD_EXPLANATIONS for why each keyword matters
-- Added context extraction (actual sentences from filing)
-- Enhanced anomaly descriptions with severity reasoning
+Anomaly Detection for 10-K Filings
+------------------------------------
+Detects unusual patterns by comparing current vs. historical filings.
+Uses keyword frequency tracking and LLM-based contextual analysis.
 """
 
-from pathlib import Path
-from typing import Dict, List, Optional, Tuple
-from collections import Counter
-import json
 import re
+import json
 import logging
+from pathlib import Path
+from typing import Dict, List, Optional
 from datetime import datetime
 
-logging.basicConfig(level=logging.INFO)
+from src.config.settings import Settings
+
 logger = logging.getLogger(__name__)
 
 
+# Keywords tracked across filings, organized by category
+TRACKED_KEYWORDS = {
+    "legal_regulatory": {
+        "litigation": ["litigation", "lawsuit", "legal proceedings", "class action", "arbitration"],
+        "regulatory": ["regulatory action", "SEC investigation", "consent decree", "compliance violation"],
+        "sanctions": ["sanctions", "penalty", "fine", "enforcement action"],
+        "antitrust": ["antitrust", "anti-competitive", "monopoly", "cartel"],
+    },
+    "financial_risk": {
+        "liquidity": ["liquidity risk", "cash shortfall", "credit facility", "going concern"],
+        "debt": ["debt covenant", "leverage ratio", "credit downgrade", "debt restructuring"],
+        "impairment": ["goodwill impairment", "asset writedown", "restructuring charge"],
+        "revenue": ["revenue decline", "customer concentration", "contract termination"],
+    },
+    "operational": {
+        "cybersecurity": ["cybersecurity", "data breach", "ransomware", "security incident"],
+        "supply_chain": ["supply chain disruption", "supplier risk", "component shortage"],
+        "workforce": ["layoff", "workforce reduction", "restructuring", "headcount"],
+        "climate": ["climate risk", "carbon emissions", "environmental regulation"],
+    },
+    "strategic": {
+        "competition": ["competitive pressure", "market share loss", "disruptive technology"],
+        "acquisition": ["acquisition", "merger", "divestiture", "joint venture"],
+        "ai_technology": ["artificial intelligence", "machine learning", "generative AI"],
+    },
+}
+
+
 class AnomalyDetector:
-    """
-    Detects anomalies by comparing current vs. historical filings.
-    Enhanced with explanations and context extraction.
-    """
-    
-    # ========================================================================
-    # KEYWORD DEFINITIONS WITH EXPLANATIONS
-    # ========================================================================
-    
-    TRACKED_KEYWORDS = {
-        'regulation': {
-            'terms': ['regulation', 'regulatory', 'compliance', 'legal requirement'],
-            'explanation': 'Increased regulatory discussion often signals compliance concerns, '
-                          'potential fines, or new rules affecting operations.',
-            'category': 'Regulatory Risk'
-        },
-        'tariff': {
-            'terms': ['tariff', 'trade war', 'import tax', 'duty', 'trade restriction'],
-            'explanation': 'Tariff mentions indicate exposure to trade policy changes, '
-                          'which can impact margins and supply chain costs.',
-            'category': 'Trade Policy'
-        },
-        'supply_chain': {
-            'terms': ['supply chain', 'logistics', 'supplier', 'manufacturing disruption', 'shortage'],
-            'explanation': 'Supply chain discussions highlight operational dependencies '
-                          'and potential production or delivery risks.',
-            'category': 'Operational Risk'
-        },
-        'competition': {
-            'terms': ['competition', 'competitive', 'competitor', 'rival', 'market share'],
-            'explanation': 'Increased competitive language may signal market pressure, '
-                          'pricing challenges, or threats to market position.',
-            'category': 'Market Risk'
-        },
-        'china': {
-            'terms': ['china', 'chinese', 'beijing', 'prc'],
-            'explanation': 'China-related mentions often involve supply chain exposure, '
-                          'regulatory risks, or geopolitical concerns.',
-            'category': 'Geopolitical Risk'
-        },
-        'ai': {
-            'terms': ['artificial intelligence', ' ai ', 'machine learning', 'deep learning', 'generative ai'],
-            'explanation': 'AI mentions reflect competitive positioning in technology, '
-                          'R&D investment priorities, or disruption concerns.',
-            'category': 'Technology'
-        },
-        'cybersecurity': {
-            'terms': ['cybersecurity', 'cyber security', 'data breach', 'hacking', 'ransomware', 'cyber attack'],
-            'explanation': 'Cybersecurity discussion indicates exposure to operational '
-                          'disruption, data protection costs, and compliance requirements.',
-            'category': 'Security Risk'
-        },
-        'inflation': {
-            'terms': ['inflation', 'inflationary', 'price increase', 'cost pressure', 'rising costs'],
-            'explanation': 'Inflation mentions signal margin pressure from rising input '
-                          'costs, labor, or operational expenses.',
-            'category': 'Economic Risk'
-        },
-        'recession': {
-            'terms': ['recession', 'economic downturn', 'slowdown', 'economic uncertainty', 'demand weakness'],
-            'explanation': 'Recession language indicates concern about consumer demand, '
-                          'revenue stability, or macroeconomic exposure.',
-            'category': 'Economic Risk'
-        },
-        'interest_rate': {
-            'terms': ['interest rate', 'fed rate', 'monetary policy', 'borrowing cost', 'debt service'],
-            'explanation': 'Interest rate discussion signals exposure to financing costs, '
-                          'debt refinancing risks, or capital allocation challenges.',
-            'category': 'Financial Risk'
-        },
-        'layoffs': {
-            'terms': ['layoff', 'workforce reduction', 'restructuring', 'headcount', 'job cut', 'severance'],
-            'explanation': 'Layoff mentions may indicate cost-cutting measures, '
-                          'operational restructuring, or financial stress.',
-            'category': 'Operational'
-        },
-        'acquisition': {
-            'terms': ['acquisition', 'merger', 'acquire', 'takeover', 'deal', 'transaction'],
-            'explanation': 'Acquisition discussion reflects growth strategy, integration '
-                          'risks, or potential changes in company structure.',
-            'category': 'Corporate Strategy'
-        },
-        'lawsuit': {
-            'terms': ['lawsuit', 'litigation', 'legal proceedings', 'settlement', 'plaintiff', 'defendant'],
-            'explanation': 'Litigation mentions indicate legal exposure, potential '
-                          'financial liabilities, or reputational risks.',
-            'category': 'Legal Risk'
-        },
-        'currency': {
-            'terms': ['currency', 'foreign exchange', 'forex', 'fx risk', 'exchange rate', 'hedging'],
-            'explanation': 'Currency discussion signals exposure to exchange rate '
-                          'fluctuations affecting international revenue or costs.',
-            'category': 'Financial Risk'
-        },
-        'climate': {
-            'terms': ['climate', 'environmental', 'sustainability', 'carbon', 'emissions', 'esg'],
-            'explanation': 'Climate and ESG mentions reflect regulatory compliance, '
-                          'reputational positioning, or operational sustainability.',
-            'category': 'ESG Risk'
-        }
-    }
-    
+    """Detects anomalies in 10-K filings by comparing current to historical."""
+
     def __init__(self, data_dir: Path = None):
-        """Initialize anomaly detector."""
-        if data_dir is None:
-            data_dir = Path("data")
-        
-        self.data_dir = data_dir
-        self.sentiment_dir = data_dir / "sentiment"
-        self.sections_dir = data_dir / "sections"
-        self.output_dir = data_dir / "anomalies"
-        self.output_dir.mkdir(parents=True, exist_ok=True)
-        
-        logger.info("Enhanced Anomaly Detector initialized")
-    
-    # ========================================================================
-    # DATA LOADING
-    # ========================================================================
-    
-    def load_sentiment_history(self, ticker: str) -> List[Dict]:
-        """Load all sentiment files for a ticker, sorted by date."""
-        files = list(self.sentiment_dir.glob(f"{ticker}_*_sentiment.json"))
-        
-        history = []
-        for file in files:
+        self.data_dir = data_dir or Settings.DATA_DIR
+        self.sections_dir = self.data_dir / "sections"
+        self.sentiment_dir = self.data_dir / "sentiment"
+        self.anomalies_dir = Settings.ANOMALIES_DIR
+        self._gemini_model = None
+
+    @property
+    def gemini_model(self):
+        if self._gemini_model is None and Settings.GEMINI_API_KEY:
             try:
-                with open(file, 'r') as f:
-                    data = json.load(f)
-                
-                # Parse date from filename
-                parts = file.stem.split('_')
-                if len(parts) >= 2:
-                    data['filing_date'] = parts[1]
-                    data['_file'] = str(file)
-                
-                history.append(data)
+                import google.generativeai as genai
+                genai.configure(api_key=Settings.GEMINI_API_KEY)
+                self._gemini_model = genai.GenerativeModel(Settings.GEMINI_MODEL)
+                logger.info(f"Gemini model loaded: {Settings.GEMINI_MODEL}")
             except Exception as e:
-                logger.warning(f"Could not load {file}: {e}")
-        
-        # Sort by date (oldest first)
-        history.sort(key=lambda x: x.get('filing_date', ''))
-        
-        return history
-    
-    def load_section_text(self, ticker: str, filing_date: str, section: str) -> Optional[str]:
-        """Load text for a specific section."""
-        # Try different filename formats
-        patterns = [
-            f"{ticker}_{filing_date}_{section}.txt",
-            f"{ticker}_{filing_date}_item_{section.replace('item_', '')}.txt",
-        ]
-        
-        for pattern in patterns:
-            files = list(self.sections_dir.glob(pattern))
-            if files:
-                with open(files[0], 'r', encoding='utf-8') as f:
-                    return f.read()
-        
-        return None
-    
-    # ========================================================================
-    # KEYWORD EXTRACTION AND CONTEXT
-    # ========================================================================
-    
-    def extract_keywords(self, text: str) -> Counter:
-        """Extract and count tracked keywords."""
-        text_lower = text.lower()
-        keyword_counts = Counter()
-        
-        for category, config in self.TRACKED_KEYWORDS.items():
-            count = 0
-            for term in config['terms']:
-                # Use word boundaries for accurate matching
-                pattern = r'\b' + re.escape(term.strip().lower()) + r'\b'
-                matches = re.findall(pattern, text_lower)
-                count += len(matches)
-            
-            if count > 0:
-                keyword_counts[category] = count
-        
-        return keyword_counts
-    
-    def extract_context_sentences(
-        self, 
-        text: str, 
-        keyword_category: str, 
-        max_sentences: int = 2
-    ) -> List[str]:
-        """
-        Extract sentences containing the keyword for context.
-        
-        Args:
-            text: Full section text
-            keyword_category: Category key from TRACKED_KEYWORDS
-            max_sentences: Maximum sentences to return
-            
-        Returns:
-            List of relevant sentences
-        """
-        if keyword_category not in self.TRACKED_KEYWORDS:
+                logger.warning(f"Could not load Gemini model: {e}")
+        return self._gemini_model
+
+    def _get_sorted_filings(self, ticker: str) -> List[Path]:
+        """Get all sentiment files for a ticker, sorted by date ascending."""
+        files = list(self.sentiment_dir.glob(f"{ticker}_*_sentiment.json"))
+        return sorted(files, key=lambda f: f.stem.split("_")[1] if len(f.stem.split("_")) >= 2 else "")
+
+    def _load_sentiment(self, filepath: Path) -> Optional[Dict]:
+        """Load and validate a sentiment JSON file."""
+        try:
+            return json.loads(filepath.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError) as e:
+            logger.error(f"Failed to load {filepath.name}: {e}")
+            return None
+
+    def _load_section_text(self, ticker: str, filing_date: str) -> Dict[str, str]:
+        """Load raw section text for keyword analysis."""
+        texts = {}
+        for section_file in self.sections_dir.glob(f"{ticker}_{filing_date}_item_*.txt"):
+            section_key = "_".join(section_file.stem.split("_")[2:])
+            try:
+                texts[section_key] = section_file.read_text(encoding="utf-8")
+            except OSError as e:
+                logger.warning(f"Cannot read {section_file.name}: {e}")
+        return texts
+
+    def detect_sentiment_shifts(self, current: Dict, previous: Dict) -> List[Dict]:
+        """Compare sentiment scores between two filings."""
+        anomalies = []
+        current_sections = current.get("sections", {})
+        previous_sections = previous.get("sections", {})
+
+        for section_key in current_sections:
+            if section_key not in previous_sections:
+                continue
+
+            curr_score = current_sections[section_key].get("scores", {}).get("compound", 0)
+            prev_score = previous_sections[section_key].get("scores", {}).get("compound", 0)
+            delta = curr_score - prev_score
+
+            if abs(delta) >= Settings.ANOMALY_SENTIMENT_THRESHOLD:
+                direction = "positive" if delta > 0 else "negative"
+                severity = "high" if abs(delta) >= 0.3 else "medium"
+
+                anomalies.append({
+                    "type": "sentiment_shift",
+                    "category": "Sentiment Analysis",
+                    "title": f"Significant {direction} shift in {section_key.replace('_', ' ').title()}",
+                    "description": f"Sentiment changed by {delta:+.3f} ({prev_score:+.3f} -> {curr_score:+.3f})",
+                    "severity": severity,
+                    "severity_reason": f"Delta of {abs(delta):.3f} exceeds threshold of {Settings.ANOMALY_SENTIMENT_THRESHOLD}",
+                    "section": section_key,
+                    "current_score": curr_score,
+                    "previous_score": prev_score,
+                    "delta": delta,
+                })
+
+        return anomalies
+
+    def detect_keyword_anomalies(
+        self, ticker: str, current_date: str, historical_dates: List[str]
+    ) -> List[Dict]:
+        """Detect unusual keyword frequency changes."""
+        current_texts = self._load_section_text(ticker, current_date)
+        if not current_texts:
             return []
-        
-        terms = self.TRACKED_KEYWORDS[keyword_category]['terms']
-        
-        # Split into sentences
-        sentences = re.split(r'(?<=[.!?])\s+', text)
-        
-        relevant_sentences = []
-        
+
+        current_full_text = " ".join(current_texts.values()).lower()
+
+        # Build historical baseline
+        historical_counts: Dict[str, List[int]] = {}
+        for hist_date in historical_dates:
+            hist_texts = self._load_section_text(ticker, hist_date)
+            hist_full = " ".join(hist_texts.values()).lower()
+            for category, groups in TRACKED_KEYWORDS.items():
+                for keyword_group, terms in groups.items():
+                    key = f"{category}/{keyword_group}"
+                    count = sum(hist_full.count(term.lower()) for term in terms)
+                    historical_counts.setdefault(key, []).append(count)
+
+        anomalies = []
+        for category, groups in TRACKED_KEYWORDS.items():
+            for keyword_group, terms in groups.items():
+                key = f"{category}/{keyword_group}"
+                current_count = sum(current_full_text.count(term.lower()) for term in terms)
+
+                hist = historical_counts.get(key, [])
+                if len(hist) < Settings.ANOMALY_MIN_HISTORICAL_COUNT:
+                    continue
+
+                avg_count = sum(hist) / len(hist)
+                if avg_count == 0 and current_count > 0:
+                    anomalies.append({
+                        "type": "keyword_emergence",
+                        "category": category.replace("_", " ").title(),
+                        "title": f"New mentions of {keyword_group.replace('_', ' ')}",
+                        "description": f"Found {current_count} mention(s) — absent in prior {len(hist)} filings",
+                        "severity": "high" if current_count >= 5 else "medium",
+                        "severity_reason": f"New keyword category with {current_count} mentions",
+                        "current_count": current_count,
+                        "average_count": avg_count,
+                        "context": self._extract_context(current_full_text, terms),
+                    })
+                elif avg_count > 0:
+                    ratio = current_count / avg_count
+                    if ratio >= Settings.ANOMALY_FREQUENCY_MULTIPLIER:
+                        anomalies.append({
+                            "type": "keyword_spike",
+                            "category": category.replace("_", " ").title(),
+                            "title": f"Surge in {keyword_group.replace('_', ' ')} mentions",
+                            "description": f"{current_count} mentions vs. avg {avg_count:.1f} ({ratio:.1f}x increase)",
+                            "severity": "high" if ratio >= 5 else "medium",
+                            "severity_reason": f"{ratio:.1f}x increase exceeds {Settings.ANOMALY_FREQUENCY_MULTIPLIER}x threshold",
+                            "current_count": current_count,
+                            "average_count": avg_count,
+                            "ratio": ratio,
+                            "context": self._extract_context(current_full_text, terms),
+                        })
+                    elif 0 < ratio <= 1 / Settings.ANOMALY_FREQUENCY_MULTIPLIER:
+                        anomalies.append({
+                            "type": "keyword_decline",
+                            "category": category.replace("_", " ").title(),
+                            "title": f"Sharp drop in {keyword_group.replace('_', ' ')} mentions",
+                            "description": f"{current_count} mentions vs. avg {avg_count:.1f} ({1/ratio:.1f}x decrease)",
+                            "severity": "medium",
+                            "severity_reason": f"Mentions dropped to {1/ratio:.1f}x below threshold",
+                            "current_count": current_count,
+                            "average_count": avg_count,
+                            "ratio": ratio,
+                            "context": self._extract_context(current_full_text, terms),
+                        })
+
+        return anomalies
+
+    def _extract_context(self, text: str, terms: List[str], max_sentences: int = 3) -> List[str]:
+        """Extract sentences containing the tracked terms."""
+        sentences = re.split(r"(?<=[.!?])\s+", text)
+        matching = []
         for sentence in sentences:
-            sentence_lower = sentence.lower()
-            
-            # Check if any term appears in sentence
-            for term in terms:
-                if term.strip().lower() in sentence_lower:
-                    # Clean up the sentence
-                    clean_sentence = ' '.join(sentence.split())
-                    if len(clean_sentence) > 50 and len(clean_sentence) < 500:
-                        relevant_sentences.append(clean_sentence)
+            if any(term.lower() in sentence.lower() for term in terms):
+                clean = sentence.strip()[:400]
+                if clean and clean not in matching:
+                    matching.append(clean)
+                    if len(matching) >= max_sentences:
                         break
-            
-            if len(relevant_sentences) >= max_sentences:
-                break
-        
-        return relevant_sentences
-    
-    # ========================================================================
-    # ANOMALY DETECTION
-    # ========================================================================
-    
-    def detect_sentiment_shift(
-        self,
-        current: Dict,
-        previous: Dict,
-        threshold: float = 0.15
-    ) -> List[Dict]:
-        """Detect significant sentiment shifts between filings."""
-        anomalies = []
-        
-        # Compare overall sentiment
-        current_score = current.get('overall', {}).get('compound', 0)
-        previous_score = previous.get('overall', {}).get('compound', 0)
-        
-        delta = current_score - previous_score
-        
-        if abs(delta) >= threshold:
-            direction = "improved" if delta > 0 else "declined"
-            
-            # Determine severity
-            if abs(delta) >= 0.3:
-                severity = 'high'
-                severity_reason = f"Large shift of {abs(delta):.0%} indicates significant change in tone"
-            else:
-                severity = 'medium'
-                severity_reason = f"Moderate shift of {abs(delta):.0%} suggests evolving outlook"
-            
-            anomalies.append({
-                'type': 'sentiment_shift',
-                'category': 'Sentiment Analysis',
-                'severity': severity,
-                'severity_reason': severity_reason,
-                'title': f"Overall Sentiment {direction.title()}",
-                'description': f"Overall sentiment {direction} by {abs(delta):.2f} points",
-                'explanation': f"The company's overall tone in this filing is notably "
-                              f"{'more optimistic' if delta > 0 else 'more cautious'} compared to "
-                              f"the previous filing. This may reflect changes in business outlook, "
-                              f"market conditions, or management confidence.",
-                'current_score': round(current_score, 3),
-                'previous_score': round(previous_score, 3),
-                'delta': round(delta, 3),
-                'direction': direction
-            })
-        
-        return anomalies
-    
-    def detect_new_keywords(
-        self,
-        current_keywords: Counter,
-        historical_keywords: List[Counter],
-        section_text: str = None
-    ) -> List[Dict]:
-        """Detect newly appearing keywords."""
-        anomalies = []
-        
-        if not historical_keywords:
+        return matching
+
+    def enrich_with_llm(self, anomalies: List[Dict], ticker: str) -> List[Dict]:
+        """Use Gemini to generate explanations for detected anomalies."""
+        if not self.gemini_model or not anomalies:
             return anomalies
-        
-        # Get all keywords that appeared in any historical filing
-        historical_set = set()
-        for hist in historical_keywords:
-            historical_set.update(hist.keys())
-        
-        # Find new keywords
-        new_keywords = set(current_keywords.keys()) - historical_set
-        
-        for keyword in new_keywords:
-            config = self.TRACKED_KEYWORDS.get(keyword, {})
-            category = config.get('category', 'General')
-            explanation = config.get('explanation', 'This topic was not discussed in previous filings.')
-            
-            # Extract context if section text provided
-            context = []
-            if section_text:
-                context = self.extract_context_sentences(section_text, keyword)
-            
-            anomalies.append({
-                'type': 'new_keyword',
-                'category': category,
-                'severity': 'high',
-                'severity_reason': 'First-time mention indicates new area of focus or concern',
-                'title': f"NEW: {keyword.replace('_', ' ').title()}",
-                'description': f"First mention of '{keyword.replace('_', ' ')}' ({current_keywords[keyword]} occurrences)",
-                'explanation': explanation,
-                'keyword': keyword,
-                'count': current_keywords[keyword],
-                'context': context
-            })
-        
+
+        for anomaly in anomalies:
+            try:
+                prompt = (
+                    f"You are a financial analyst. A {anomaly['type']} anomaly was detected in "
+                    f"{ticker}'s 10-K filing.\n\n"
+                    f"Title: {anomaly['title']}\n"
+                    f"Description: {anomaly['description']}\n"
+                    f"Context: {'; '.join(anomaly.get('context', []))}\n\n"
+                    f"In 2-3 sentences, explain why this matters for investors."
+                )
+                response = self.gemini_model.generate_content(prompt)
+                anomaly["explanation"] = response.text.strip()
+            except Exception as e:
+                logger.warning(f"LLM enrichment failed for anomaly: {e}")
+                anomaly["explanation"] = "LLM analysis unavailable."
+
         return anomalies
-    
-    def detect_frequency_changes(
-        self,
-        current_keywords: Counter,
-        historical_keywords: List[Counter],
-        section_text: str = None,
-        multiplier: float = 3.0
-    ) -> List[Dict]:
-        """Detect significant keyword frequency changes."""
-        anomalies = []
-        
-        if not historical_keywords:
-            return anomalies
-        
-        # Calculate average historical frequency
-        avg_historical = Counter()
-        for hist in historical_keywords:
-            avg_historical.update(hist)
-        
-        num_filings = len(historical_keywords)
-        for key in avg_historical:
-            avg_historical[key] /= num_filings
-        
-        # Compare current to average
-        for keyword in current_keywords:
-            if keyword not in avg_historical:
-                continue
-            
-            current_count = current_keywords[keyword]
-            avg_count = avg_historical[keyword]
-            
-            if avg_count < 1:
-                continue
-            
-            ratio = current_count / avg_count
-            
-            config = self.TRACKED_KEYWORDS.get(keyword, {})
-            category = config.get('category', 'General')
-            explanation = config.get('explanation', '')
-            
-            # Extract context
-            context = []
-            if section_text:
-                context = self.extract_context_sentences(section_text, keyword)
-            
-            if ratio >= multiplier:
-                # Significant increase
-                if ratio >= 5:
-                    severity = 'high'
-                    severity_reason = f'{ratio:.1f}x increase suggests major new focus area'
-                else:
-                    severity = 'medium'
-                    severity_reason = f'{ratio:.1f}x increase indicates growing importance'
-                
-                anomalies.append({
-                    'type': 'frequency_increase',
-                    'category': category,
-                    'severity': severity,
-                    'severity_reason': severity_reason,
-                    'title': f"{keyword.replace('_', ' ').title()} - Frequency Spike",
-                    'description': f"'{keyword.replace('_', ' ')}' mentioned {ratio:.1f}x more ({current_count} vs {avg_count:.0f} previously)",
-                    'explanation': explanation,
-                    'keyword': keyword,
-                    'current_count': current_count,
-                    'average_count': round(avg_count, 1),
-                    'ratio': round(ratio, 1),
-                    'context': context
-                })
-            
-            elif ratio <= 1/multiplier:
-                # Significant decrease
-                anomalies.append({
-                    'type': 'frequency_decrease',
-                    'category': category,
-                    'severity': 'low',
-                    'severity_reason': f'Topic mentioned {1/ratio:.1f}x less than usual',
-                    'title': f"{keyword.replace('_', ' ').title()} - Reduced Focus",
-                    'description': f"'{keyword.replace('_', ' ')}' mentioned {1/ratio:.1f}x less ({current_count} vs {avg_count:.0f} previously)",
-                    'explanation': f"Reduced discussion of this topic may indicate resolved concerns or shifted priorities.",
-                    'keyword': keyword,
-                    'current_count': current_count,
-                    'average_count': round(avg_count, 1),
-                    'ratio': round(ratio, 2),
-                    'context': []
-                })
-        
-        return anomalies
-    
-    def detect_missing_topics(
-        self,
-        current_keywords: Counter,
-        historical_keywords: List[Counter],
-        min_historical_count: int = 3
-    ) -> List[Dict]:
-        """Detect topics that disappeared from discussion."""
-        anomalies = []
-        
-        if not historical_keywords:
-            return anomalies
-        
-        # Get keywords consistently mentioned in history
-        historical_totals = Counter()
-        for hist in historical_keywords:
-            historical_totals.update(hist)
-        
-        for keyword, count in historical_totals.items():
-            if count >= min_historical_count and keyword not in current_keywords:
-                config = self.TRACKED_KEYWORDS.get(keyword, {})
-                category = config.get('category', 'General')
-                
-                anomalies.append({
-                    'type': 'missing_topic',
-                    'category': category,
-                    'severity': 'low',
-                    'severity_reason': 'Previously discussed topic no longer mentioned',
-                    'title': f"{keyword.replace('_', ' ').title()} - No Longer Mentioned",
-                    'description': f"'{keyword.replace('_', ' ')}' not mentioned (was {count} times across {len(historical_keywords)} previous filings)",
-                    'explanation': f"This topic was regularly discussed in previous filings but is absent from the current one. "
-                                  f"This could indicate resolved issues or de-prioritization.",
-                    'keyword': keyword,
-                    'historical_count': count,
-                    'context': []
-                })
-        
-        return anomalies
-    
-    # ========================================================================
-    # MAIN ANALYSIS
-    # ========================================================================
-    
+
     def analyze_ticker(self, ticker: str) -> Dict:
-        """
-        Complete anomaly analysis for a ticker.
-        Compares latest filing to historical average.
-        
-        Args:
-            ticker: Stock ticker
-            
-        Returns:
-            Dict with all detected anomalies
-        """
-        logger.info(f"\n{'='*80}")
-        logger.info(f"ANOMALY DETECTION: {ticker}")
-        logger.info(f"{'='*80}")
-        
-        # Load sentiment history
-        sentiment_history = self.load_sentiment_history(ticker)
-        
-        if len(sentiment_history) < 2:
-            logger.warning(f"Need at least 2 filings for {ticker} (found {len(sentiment_history)})")
-            return {
-                'ticker': ticker,
-                'error': f'Insufficient data: need 2+ filings, found {len(sentiment_history)}',
-                'total_anomalies': 0,
-                'anomalies': []
-            }
-        
-        # Current = latest, Historical = all previous
-        current = sentiment_history[-1]
-        previous = sentiment_history[-2]  # Most recent previous
-        history = sentiment_history[:-1]
-        
-        current_date = current.get('filing_date', 'unknown')
-        previous_date = previous.get('filing_date', 'unknown')
-        
-        logger.info(f"Analyzing: {current_date} vs {len(history)} historical filings")
-        logger.info(f"Most recent comparison: {current_date} vs {previous_date}")
-        
-        # Load section texts for context extraction
-        current_text = ""
-        for section in ['item_1a', 'item_7']:
-            text = self.load_section_text(ticker, current_date, section)
-            if text:
-                current_text += text + "\n\n"
-        
-        # Extract keywords
-        current_keywords = Counter()
-        if current_text:
-            current_keywords = self.extract_keywords(current_text)
-        
-        historical_keywords = []
-        for hist in history:
-            hist_date = hist.get('filing_date', '')
-            hist_text = ""
-            for section in ['item_1a', 'item_7']:
-                text = self.load_section_text(ticker, hist_date, section)
-                if text:
-                    hist_text += text + "\n\n"
-            
-            if hist_text:
-                historical_keywords.append(self.extract_keywords(hist_text))
-        
-        # Detect all anomaly types
-        all_anomalies = []
-        
-        # 1. Sentiment shifts (vs previous filing)
-        logger.info("\n[1] Checking sentiment shifts...")
-        sentiment_anomalies = self.detect_sentiment_shift(current, previous)
-        all_anomalies.extend(sentiment_anomalies)
-        
-        # 2. New keywords
-        logger.info("[2] Checking for new keywords...")
-        new_keyword_anomalies = self.detect_new_keywords(
-            current_keywords, historical_keywords, current_text
-        )
-        all_anomalies.extend(new_keyword_anomalies)
-        
-        # 3. Frequency changes
-        logger.info("[3] Checking frequency changes...")
-        frequency_anomalies = self.detect_frequency_changes(
-            current_keywords, historical_keywords, current_text
-        )
-        all_anomalies.extend(frequency_anomalies)
-        
-        # 4. Missing topics
-        logger.info("[4] Checking for missing topics...")
-        missing_anomalies = self.detect_missing_topics(
-            current_keywords, historical_keywords
-        )
-        all_anomalies.extend(missing_anomalies)
-        
-        # Sort by severity (high first)
-        severity_order = {'high': 0, 'medium': 1, 'low': 2}
-        all_anomalies.sort(key=lambda x: severity_order.get(x.get('severity', 'low'), 3))
-        
-        # Compile report
+        """Full anomaly detection for a ticker."""
+        ticker = ticker.upper()
+        logger.info(f"Running anomaly detection for {ticker}")
+
+        filings = self._get_sorted_filings(ticker)
+        if len(filings) < 2:
+            return {"ticker": ticker, "error": "Need 2+ filings for comparison", "anomalies": [], "total_anomalies": 0}
+
+        current_file = filings[-1]
+        previous_file = filings[-2]
+        current_data = self._load_sentiment(current_file)
+        previous_data = self._load_sentiment(previous_file)
+
+        if not current_data or not previous_data:
+            return {"ticker": ticker, "error": "Could not load sentiment data", "anomalies": [], "total_anomalies": 0}
+
+        current_date = current_file.stem.split("_")[1]
+        previous_date = previous_file.stem.split("_")[1]
+        historical_dates = [f.stem.split("_")[1] for f in filings[:-1]]
+
+        # Detect anomalies
+        anomalies = []
+        anomalies.extend(self.detect_sentiment_shifts(current_data, previous_data))
+        anomalies.extend(self.detect_keyword_anomalies(ticker, current_date, historical_dates))
+
+        # Sort by severity
+        severity_order = {"high": 0, "medium": 1, "low": 2}
+        anomalies.sort(key=lambda a: severity_order.get(a.get("severity", "low"), 3))
+
+        # Enrich with LLM explanations
+        anomalies = self.enrich_with_llm(anomalies, ticker)
+
         report = {
-            'ticker': ticker,
-            'current_filing_date': current_date,
-            'compared_to': previous_date,
-            'num_historical_filings': len(history),
-            'total_anomalies': len(all_anomalies),
-            'anomalies_by_severity': {
-                'high': len([a for a in all_anomalies if a.get('severity') == 'high']),
-                'medium': len([a for a in all_anomalies if a.get('severity') == 'medium']),
-                'low': len([a for a in all_anomalies if a.get('severity') == 'low'])
+            "ticker": ticker,
+            "analysis_date": datetime.now().isoformat(),
+            "current_filing_date": current_date,
+            "compared_to": previous_date,
+            "num_historical_filings": len(historical_dates),
+            "total_anomalies": len(anomalies),
+            "anomalies_by_severity": {
+                "high": sum(1 for a in anomalies if a.get("severity") == "high"),
+                "medium": sum(1 for a in anomalies if a.get("severity") == "medium"),
+                "low": sum(1 for a in anomalies if a.get("severity") == "low"),
             },
-            'anomalies': all_anomalies,
-            'analysis_date': datetime.now().isoformat()
+            "anomalies": anomalies,
         }
-        
-        logger.info(f"\n{'='*80}")
-        logger.info(f"SUMMARY: {len(all_anomalies)} anomalies detected")
-        logger.info(f"  High: {report['anomalies_by_severity']['high']}")
-        logger.info(f"  Medium: {report['anomalies_by_severity']['medium']}")
-        logger.info(f"  Low: {report['anomalies_by_severity']['low']}")
-        logger.info(f"{'='*80}")
-        
+
+        logger.info(f"Anomaly detection complete for {ticker}: {len(anomalies)} found")
         return report
-    
+
     def save_report(self, report: Dict) -> Path:
-        """Save anomaly report to JSON."""
-        filename = f"{report['ticker']}_{report['current_filing_date']}_anomalies.json"
-        filepath = self.output_dir / filename
-        
-        with open(filepath, 'w') as f:
-            json.dump(report, f, indent=2)
-        
-        logger.info(f"Report saved: {filepath}")
-        return filepath
-    
-    def print_report(self, report: Dict):
-        """Pretty print anomaly report to console."""
-        print(f"\n{'='*80}")
-        print(f"ANOMALY REPORT: {report['ticker']}")
-        print(f"{'='*80}")
-        print(f"Current Filing: {report.get('current_filing_date', 'N/A')}")
-        print(f"Compared To: {report.get('compared_to', 'N/A')}")
-        print(f"Total Anomalies: {report.get('total_anomalies', 0)}")
-        
-        severity = report.get('anomalies_by_severity', {})
-        print(f"  🔴 High: {severity.get('high', 0)}")
-        print(f"  🟡 Medium: {severity.get('medium', 0)}")
-        print(f"  🟢 Low: {severity.get('low', 0)}")
-        
-        if not report.get('anomalies'):
-            print("\n✅ No anomalies detected - filing appears normal.")
-            return
-        
-        print(f"\n{'='*80}")
-        print("DETECTED ANOMALIES")
-        print(f"{'='*80}")
-        
-        for i, anomaly in enumerate(report['anomalies'], 1):
-            severity = anomaly.get('severity', 'medium')
-            icon = '🔴' if severity == 'high' else ('🟡' if severity == 'medium' else '🟢')
-            
-            print(f"\n{icon} [{i}] {anomaly.get('title', 'Anomaly')}")
-            print(f"    Category: {anomaly.get('category', 'N/A')}")
-            print(f"    {anomaly.get('description', '')}")
-            print(f"    ")
-            print(f"    Why it matters: {anomaly.get('explanation', 'N/A')}")
-            
-            if anomaly.get('context'):
-                print(f"    ")
-                print(f"    Context from filing:")
-                for ctx in anomaly['context'][:2]:
-                    print(f"    \"{ctx[:200]}...\"")
-
-
-# ============================================================================
-# TESTING
-# ============================================================================
-
-if __name__ == "__main__":
-    print("=" * 80)
-    print("ENHANCED ANOMALY DETECTION ENGINE")
-    print("=" * 80)
-    
-    detector = AnomalyDetector()
-    
-    # Test with Apple
-    print("\n[TEST] Analyzing AAPL...")
-    report = detector.analyze_ticker("AAPL")
-    detector.print_report(report)
-    detector.save_report(report)
-    
-    # Prompt for more
-    response = input("\nAnalyze another ticker? Enter ticker or 'n': ").strip().upper()
-    if response and response != 'N':
-        report = detector.analyze_ticker(response)
-        detector.print_report(report)
-        detector.save_report(report)
+        """Save anomaly report to disk."""
+        ticker = report.get("ticker", "UNKNOWN")
+        current_date = report.get("current_filing_date", "unknown")
+        output_path = self.anomalies_dir / f"{ticker}_{current_date}_anomalies.json"
+        output_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
+        logger.info(f"Saved anomaly report: {output_path.name}")
+        return output_path
