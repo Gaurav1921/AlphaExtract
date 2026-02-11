@@ -1,3 +1,1 @@
-"""Database"""
-from .supabase_client import SupabaseDB
-__all__ = ['SupabaseDB']
+"""Database module for AlphaExtract."""
