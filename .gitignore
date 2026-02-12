@@ -35,6 +35,13 @@ data/raw/*.htm
 data/processed/*.md
 data/processed/*.csv
 
+# Generated output (sentiment, backtest, anomalies, market data)
+data/sentiment/
+data/backtest/
+data/anomalies/
+data/market/
+data/sections/
+
 # Keep metadata files (they're small)
 !data/raw/*.json
 !data/processed/*_metadata.json
