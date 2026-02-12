@@ -60,10 +60,11 @@ class TestValidation:
             warnings = Settings.validate()
             assert any("SEC_EMAIL" in w for w in warnings)
 
-    def test_validate_warns_on_missing_gemini(self):
-        with patch.object(Settings, "GEMINI_API_KEY", None):
+    def test_validate_warns_on_missing_llm_keys(self):
+        with patch.object(Settings, "GEMINI_API_KEY", None), \
+             patch.object(Settings, "GROQ_API_KEY", None):
             warnings = Settings.validate()
-            assert any("GEMINI_API_KEY" in w for w in warnings)
+            assert any("LLM" in w for w in warnings)
 
     def test_validate_warns_on_missing_supabase(self):
         with patch.object(Settings, "SUPABASE_URL", None):

@@ -106,6 +106,8 @@ class TestLLMScorer:
 
     def test_unavailable_returns_zero(self):
         scorer = LLMScorer()
+        scorer._client = None
+        scorer._provider = None
         with patch.object(type(scorer), "client", new_callable=lambda: property(lambda self: None)):
             result = scorer.score("AAPL", {"item_7": "text"})
             assert result["score"] == 0.0
@@ -160,18 +162,52 @@ class TestLLMScorer:
         assert result["outlook"] == "bullish"
         assert result["score"] == 0.65
 
-    def test_rate_limit_retry(self):
-        """Test that 429 errors trigger retry and eventually return unavailable."""
+    def test_rate_limit_retry_openai_compatible(self):
+        """Test that 429 errors trigger retry with Groq/Ollama provider."""
+        scorer = LLMScorer()
+        mock_client = MagicMock()
+        mock_client.chat.completions.create.side_effect = Exception("429 rate_limit_exceeded")
+        scorer._client = mock_client
+        scorer._provider = "groq"
+        scorer._model = "llama-3.3-70b-versatile"
+        with patch("src.models.ensemble.time.sleep"):
+            result = scorer.score("AAPL", {"item_7": "text"})
+        assert result["score"] == 0.0
+        assert result["available"] is False
+        assert mock_client.chat.completions.create.call_count == 4
+
+    def test_rate_limit_retry_gemini(self):
+        """Test that 429 errors trigger retry with Gemini provider."""
         scorer = LLMScorer()
         mock_client = MagicMock()
         mock_client.models.generate_content.side_effect = Exception("429 RESOURCE_EXHAUSTED")
-        with patch.object(type(scorer), "client", new_callable=lambda: property(lambda self: mock_client)):
-            with patch("src.models.ensemble.time.sleep"):  # Don't actually sleep in tests
-                result = scorer.score("AAPL", {"item_7": "text"})
+        scorer._client = mock_client
+        scorer._provider = "gemini"
+        scorer._model = "gemini-2.0-flash"
+        with patch("src.models.ensemble.time.sleep"):
+            result = scorer.score("AAPL", {"item_7": "text"})
         assert result["score"] == 0.0
-        assert result["available"] is False  # Error treated as unavailable
-        # Should have retried 3 times + 1 initial = 4 total calls
+        assert result["available"] is False
         assert mock_client.models.generate_content.call_count == 4
+
+    def test_groq_provider_calls_openai_api(self):
+        """Test that Groq provider uses the OpenAI-compatible chat API."""
+        scorer = LLMScorer()
+        mock_client = MagicMock()
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock()]
+        mock_response.choices[0].message.content = json.dumps({
+            "outlook": "bullish", "confidence": "high",
+            "key_factors": ["growth"], "one_line_summary": "Strong"
+        })
+        mock_client.chat.completions.create.return_value = mock_response
+        scorer._client = mock_client
+        scorer._provider = "groq"
+        scorer._model = "llama-3.3-70b-versatile"
+        result = scorer.score("AAPL", {"item_7": "Some text", "item_1a": "Risk text"})
+        assert result["score"] == 1.0
+        assert result["outlook"] == "bullish"
+        mock_client.chat.completions.create.assert_called_once()
 
 
 class TestEnsembleScorer:

@@ -190,47 +190,96 @@ class KeywordScorer:
 
 
 class LLMScorer:
-    """Uses Gemini to produce a qualitative directional opinion on a filing."""
+    """Produces a qualitative directional opinion on a filing using an LLM.
+
+    Supports multiple providers via LLM_PROVIDER env var:
+      - "groq"   — Free tier: 14,400 req/day, Llama 3.3 70B (recommended)
+      - "ollama"  — Fully local, unlimited, no API key needed
+      - "gemini"  — Google Gemini (free tier is very limited)
+      - "auto"    — Auto-detect: tries Groq → Ollama → Gemini
+    """
 
     def __init__(self):
         self._client = None
+        self._provider = None
+        self._model = None
+
+    def _resolve_provider(self) -> Optional[str]:
+        """Determine which LLM provider to use."""
+        provider = Settings.LLM_PROVIDER.lower()
+        if provider != "auto":
+            return provider
+
+        # Auto-detect: prefer Groq (generous free tier) → Gemini
+        if Settings.GROQ_API_KEY:
+            return "groq"
+        if Settings.GEMINI_API_KEY:
+            return "gemini"
+        # Ollama doesn't need a key — check if it's reachable
+        try:
+            import urllib.request
+            urllib.request.urlopen(f"{Settings.OLLAMA_BASE_URL}/api/tags", timeout=2)
+            return "ollama"
+        except Exception:
+            pass
+        return None
 
     @property
     def client(self):
-        if self._client is None and Settings.GEMINI_API_KEY:
-            try:
+        if self._client is not None:
+            return self._client
+
+        provider = self._resolve_provider()
+        if not provider:
+            return None
+
+        try:
+            if provider == "groq":
+                from openai import OpenAI
+                self._client = OpenAI(
+                    api_key=Settings.GROQ_API_KEY,
+                    base_url="https://api.groq.com/openai/v1",
+                )
+                self._model = Settings.GROQ_MODEL
+                self._provider = "groq"
+                logger.info(f"Groq client initialized: {self._model}")
+
+            elif provider == "ollama":
+                from openai import OpenAI
+                self._client = OpenAI(
+                    api_key="ollama",  # Ollama doesn't need a real key
+                    base_url=f"{Settings.OLLAMA_BASE_URL}/v1",
+                )
+                self._model = Settings.OLLAMA_MODEL
+                self._provider = "ollama"
+                logger.info(f"Ollama client initialized: {self._model}")
+
+            elif provider == "gemini":
                 from google import genai
                 self._client = genai.Client(api_key=Settings.GEMINI_API_KEY)
-                logger.info(f"Gemini client initialized: {Settings.GEMINI_MODEL}")
-            except Exception as e:
-                logger.warning(f"Could not initialize Gemini client: {e}")
+                self._model = Settings.GEMINI_MODEL
+                self._provider = "gemini"
+                logger.info(f"Gemini client initialized: {self._model}")
+
+        except Exception as e:
+            logger.warning(f"Could not initialize {provider} client: {e}")
         return self._client
+
+    @property
+    def provider(self) -> Optional[str]:
+        # Ensure client is resolved first
+        if self._provider is None:
+            _ = self.client
+        return self._provider
 
     @property
     def available(self) -> bool:
         return self.client is not None
 
-    def score(self, ticker: str, section_texts: Dict[str, str]) -> Dict:
-        """
-        Ask Gemini for a directional opinion on the filing.
-
-        Returns:
-            Dict with score [-1, +1], outlook, confidence, and reasoning.
-        """
-        if not self.available:
-            return {
-                "score": 0.0,
-                "outlook": "unavailable",
-                "confidence": "none",
-                "reasoning": "Gemini API not configured",
-                "available": False,
-            }
-
-        # Build a concise summary prompt — truncate to avoid token limits
+    def _build_prompt(self, ticker: str, section_texts: Dict[str, str]) -> str:
         mda_text = section_texts.get("item_7", "")[:4000]
         risk_text = section_texts.get("item_1a", "")[:2000]
-
-        prompt = f"""You are a senior equity analyst. Based on the following excerpts from {ticker}'s
+        return f"""You are a senior equity analyst. Based on the following excerpts from {ticker}'s \
 latest 10-K annual filing, provide your directional outlook.
 
 ## MD&A (Management Discussion & Analysis) — Excerpt:
@@ -247,29 +296,65 @@ Respond in EXACTLY this JSON format (no other text):
   "one_line_summary": "brief summary"
 }}"""
 
-        # Retry with exponential backoff for rate limits (429)
+    def _call_openai_compatible(self, prompt: str) -> str:
+        """Call Groq or Ollama via the OpenAI-compatible API."""
+        response = self.client.chat.completions.create(
+            model=self._model,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.1,
+            max_tokens=300,
+        )
+        return response.choices[0].message.content
+
+    def _call_gemini(self, prompt: str) -> str:
+        """Call Google Gemini."""
+        response = self.client.models.generate_content(
+            model=self._model, contents=prompt
+        )
+        return response.text
+
+    def score(self, ticker: str, section_texts: Dict[str, str]) -> Dict:
+        """
+        Ask the configured LLM for a directional opinion on the filing.
+
+        Returns:
+            Dict with score [-1, +1], outlook, confidence, and reasoning.
+        """
+        if not self.available:
+            return {
+                "score": 0.0,
+                "outlook": "unavailable",
+                "confidence": "none",
+                "reasoning": "No LLM provider configured (set GROQ_API_KEY, GEMINI_API_KEY, or run Ollama)",
+                "available": False,
+            }
+
+        prompt = self._build_prompt(ticker, section_texts)
+
+        # Retry with exponential backoff for rate limits
         max_retries = 3
         for attempt in range(max_retries + 1):
             try:
-                response = self.client.models.generate_content(
-                    model=Settings.GEMINI_MODEL, contents=prompt
-                )
-                return self._parse_response(response.text)
+                if self._provider == "gemini":
+                    text = self._call_gemini(prompt)
+                else:
+                    text = self._call_openai_compatible(prompt)
+                return self._parse_response(text)
             except Exception as e:
                 error_str = str(e)
-                is_rate_limit = "429" in error_str or "RESOURCE_EXHAUSTED" in error_str
+                is_rate_limit = "429" in error_str or "RESOURCE_EXHAUSTED" in error_str or "rate_limit" in error_str.lower()
                 if is_rate_limit and attempt < max_retries:
                     wait = 2 ** (attempt + 1)  # 2s, 4s, 8s
-                    logger.info(f"Rate limited, retrying in {wait}s (attempt {attempt + 1}/{max_retries})")
+                    logger.info(f"Rate limited ({self._provider}), retrying in {wait}s (attempt {attempt + 1}/{max_retries})")
                     time.sleep(wait)
                     continue
-                logger.warning(f"Gemini scoring failed for {ticker}: {e}")
+                logger.warning(f"LLM scoring failed for {ticker} ({self._provider}): {e}")
                 return {
                     "score": 0.0,
                     "outlook": "error",
                     "confidence": "none",
                     "reasoning": error_str,
-                    "available": False,  # Treat errors as unavailable for weight redistribution
+                    "available": False,
                 }
 
     def _parse_response(self, text: str) -> Dict:

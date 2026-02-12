@@ -32,6 +32,7 @@ class Settings:
 
     # --------------- API Keys ---------------
     GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+    GROQ_API_KEY = os.getenv("GROQ_API_KEY")
     SUPABASE_URL = os.getenv("SUPABASE_URL")
     SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
@@ -69,6 +70,13 @@ class Settings:
     SENTIMENT_TOKEN_OVERLAP = 50
     SENTIMENT_MAX_CHUNKS = 50  # max chunks to process per section
     GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+
+    # LLM provider for ensemble scoring: "groq", "ollama", "gemini"
+    # Auto-detects based on available API keys if not set
+    LLM_PROVIDER = os.getenv("LLM_PROVIDER", "auto")
+    GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+    OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+    OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2")
 
     # --------------- Sentiment Signal Thresholds ---------------
     SIGNAL_STRONG_BUY = 0.5
@@ -133,8 +141,8 @@ class Settings:
         Does NOT raise — callers decide severity.
         """
         warnings = []
-        if not cls.GEMINI_API_KEY:
-            warnings.append("GEMINI_API_KEY not set — RAG and anomaly detection will be limited")
+        if not cls.GEMINI_API_KEY and not cls.GROQ_API_KEY:
+            warnings.append("No LLM API key set (GEMINI_API_KEY or GROQ_API_KEY) — LLM scoring disabled")
         if cls.SEC_USER_EMAIL == "student@example.com":
             warnings.append("SEC_EMAIL not set — using default; SEC may throttle requests")
         if not cls.SUPABASE_URL or not cls.SUPABASE_KEY:
