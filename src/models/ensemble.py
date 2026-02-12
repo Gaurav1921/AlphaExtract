@@ -74,18 +74,34 @@ class KeywordScorer:
         return counts
 
     def _absolute_score(self, counts: Dict[str, int]) -> Dict:
-        """Score based on absolute keyword counts (no history)."""
+        """Score based on absolute keyword counts (no history).
+
+        Uses average-per-group normalization so the 13 bearish groups
+        aren't structurally overwhelmed by 2 high-frequency bullish groups.
+        The raw score is also dampened (tanh-style) to avoid extreme signals
+        from absolute counts alone — delta scoring is more reliable.
+        """
+        bearish_groups_active = [g for g in _BEARISH_GROUPS if counts.get(g, 0) > 0]
+        bullish_groups_active = [g for g in _BULLISH_GROUPS if counts.get(g, 0) > 0]
+
         bearish_total = sum(counts.get(g, 0) for g in _BEARISH_GROUPS)
         bullish_total = sum(counts.get(g, 0) for g in _BULLISH_GROUPS)
-        total = bearish_total + bullish_total
 
-        if total == 0:
+        # Normalize: average mentions per active group (avoids 2 bullish groups
+        # with high counts dominating 13 bearish groups)
+        bearish_avg = bearish_total / len(_BEARISH_GROUPS) if _BEARISH_GROUPS else 0
+        bullish_avg = bullish_total / len(_BULLISH_GROUPS) if _BULLISH_GROUPS else 0
+        avg_total = bearish_avg + bullish_avg
+
+        if avg_total == 0:
             score = 0.0
         else:
-            # Net sentiment: bullish pulls positive, bearish pulls negative
-            score = (bullish_total - bearish_total) / total
+            # Net sentiment using normalized averages
+            raw_score = (bullish_avg - bearish_avg) / avg_total
+            # Dampen: absolute scoring should produce moderate signals (cap at ±0.5)
+            # because without historical context, we can't distinguish "normal" from "elevated"
+            score = raw_score * 0.5
 
-        # Clamp to [-1, 1]
         score = max(-1.0, min(1.0, score))
 
         return {
@@ -93,6 +109,8 @@ class KeywordScorer:
             "method": "absolute",
             "bearish_mentions": bearish_total,
             "bullish_mentions": bullish_total,
+            "bearish_groups_active": len(bearish_groups_active),
+            "bullish_groups_active": len(bullish_groups_active),
             "top_risks": self._top_groups(counts, _BEARISH_GROUPS, n=3),
             "top_opportunities": self._top_groups(counts, _BULLISH_GROUPS, n=3),
         }
@@ -162,23 +180,22 @@ class LLMScorer:
     """Uses Gemini to produce a qualitative directional opinion on a filing."""
 
     def __init__(self):
-        self._model = None
+        self._client = None
 
     @property
-    def model(self):
-        if self._model is None and Settings.GEMINI_API_KEY:
+    def client(self):
+        if self._client is None and Settings.GEMINI_API_KEY:
             try:
-                import google.generativeai as genai
-                genai.configure(api_key=Settings.GEMINI_API_KEY)
-                self._model = genai.GenerativeModel(Settings.GEMINI_MODEL)
-                logger.info(f"Gemini model loaded: {Settings.GEMINI_MODEL}")
+                from google import genai
+                self._client = genai.Client(api_key=Settings.GEMINI_API_KEY)
+                logger.info(f"Gemini client initialized: {Settings.GEMINI_MODEL}")
             except Exception as e:
-                logger.warning(f"Could not load Gemini: {e}")
-        return self._model
+                logger.warning(f"Could not initialize Gemini client: {e}")
+        return self._client
 
     @property
     def available(self) -> bool:
-        return self.model is not None
+        return self.client is not None
 
     def score(self, ticker: str, section_texts: Dict[str, str]) -> Dict:
         """
@@ -218,7 +235,9 @@ Respond in EXACTLY this JSON format (no other text):
 }}"""
 
         try:
-            response = self.model.generate_content(prompt)
+            response = self.client.models.generate_content(
+                model=Settings.GEMINI_MODEL, contents=prompt
+            )
             return self._parse_response(response.text)
         except Exception as e:
             logger.warning(f"Gemini scoring failed for {ticker}: {e}")

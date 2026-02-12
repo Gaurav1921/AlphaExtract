@@ -80,7 +80,7 @@ class TestLLMScorer:
 
     def test_unavailable_returns_zero(self):
         scorer = LLMScorer()
-        with patch.object(type(scorer), "model", new_callable=lambda: property(lambda self: None)):
+        with patch.object(type(scorer), "client", new_callable=lambda: property(lambda self: None)):
             result = scorer.score("AAPL", {"item_7": "text"})
             assert result["score"] == 0.0
             assert result["available"] is False

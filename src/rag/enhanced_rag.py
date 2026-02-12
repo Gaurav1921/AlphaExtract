@@ -114,10 +114,9 @@ class EnhancedRAG:
     @property
     def llm(self):
         if self._llm is None and Settings.GEMINI_API_KEY:
-            import google.generativeai as genai
-            genai.configure(api_key=Settings.GEMINI_API_KEY)
-            self._llm = genai.GenerativeModel(Settings.GEMINI_MODEL)
-            logger.info(f"LLM loaded: {Settings.GEMINI_MODEL}")
+            from google import genai
+            self._llm = genai.Client(api_key=Settings.GEMINI_API_KEY)
+            logger.info(f"LLM client initialized: {Settings.GEMINI_MODEL}")
         return self._llm
 
     @property
@@ -180,7 +179,9 @@ class EnhancedRAG:
         )
 
         try:
-            response = self.llm.generate_content(prompt)
+            response = self.llm.models.generate_content(
+                model=Settings.GEMINI_MODEL, contents=prompt
+            )
             return response.text.strip()
         except Exception as e:
             logger.error(f"LLM generation failed: {e}")

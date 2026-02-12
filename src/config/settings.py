@@ -68,7 +68,7 @@ class Settings:
     SENTIMENT_MAX_TOKENS = 512
     SENTIMENT_TOKEN_OVERLAP = 50
     SENTIMENT_MAX_CHUNKS = 50  # max chunks to process per section
-    GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash-exp")
+    GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
 
     # --------------- Sentiment Signal Thresholds ---------------
     SIGNAL_STRONG_BUY = 0.5

@@ -53,19 +53,18 @@ class AnomalyDetector:
         self.sections_dir = self.data_dir / "sections"
         self.sentiment_dir = self.data_dir / "sentiment"
         self.anomalies_dir = Settings.ANOMALIES_DIR
-        self._gemini_model = None
+        self._gemini_client = None
 
     @property
-    def gemini_model(self):
-        if self._gemini_model is None and Settings.GEMINI_API_KEY:
+    def gemini_client(self):
+        if self._gemini_client is None and Settings.GEMINI_API_KEY:
             try:
-                import google.generativeai as genai
-                genai.configure(api_key=Settings.GEMINI_API_KEY)
-                self._gemini_model = genai.GenerativeModel(Settings.GEMINI_MODEL)
-                logger.info(f"Gemini model loaded: {Settings.GEMINI_MODEL}")
+                from google import genai
+                self._gemini_client = genai.Client(api_key=Settings.GEMINI_API_KEY)
+                logger.info(f"Gemini client initialized: {Settings.GEMINI_MODEL}")
             except Exception as e:
-                logger.warning(f"Could not load Gemini model: {e}")
-        return self._gemini_model
+                logger.warning(f"Could not initialize Gemini client: {e}")
+        return self._gemini_client
 
     def _get_sorted_filings(self, ticker: str) -> List[Path]:
         """Get all sentiment files for a ticker, sorted by date ascending."""
@@ -214,7 +213,7 @@ class AnomalyDetector:
 
     def enrich_with_llm(self, anomalies: List[Dict], ticker: str) -> List[Dict]:
         """Use Gemini to generate explanations for detected anomalies."""
-        if not self.gemini_model or not anomalies:
+        if not self.gemini_client or not anomalies:
             return anomalies
 
         for anomaly in anomalies:
@@ -227,7 +226,9 @@ class AnomalyDetector:
                     f"Context: {'; '.join(anomaly.get('context', []))}\n\n"
                     f"In 2-3 sentences, explain why this matters for investors."
                 )
-                response = self.gemini_model.generate_content(prompt)
+                response = self.gemini_client.models.generate_content(
+                    model=Settings.GEMINI_MODEL, contents=prompt
+                )
                 anomaly["explanation"] = response.text.strip()
             except Exception as e:
                 logger.warning(f"LLM enrichment failed for anomaly: {e}")
