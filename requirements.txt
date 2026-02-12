@@ -11,6 +11,9 @@ torch==2.1.2
 sentencepiece==0.1.99
 sentence-transformers>=2.2.0
 
+# Market Data
+yfinance>=0.2.30
+
 # Data Processing
 numpy==1.26.3
 openpyxl==3.1.2

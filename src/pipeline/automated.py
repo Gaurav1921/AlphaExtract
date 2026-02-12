@@ -297,6 +297,48 @@ class AutomatedPipeline:
         except Exception as e:
             return PipelineResult(success=False, message=f"Sentiment analysis failed: {e}", errors=[str(e)])
 
+    def score_ensemble(self, ticker: str, filing_date: str) -> PipelineResult:
+        """Run ensemble scoring (FinBERT + Keywords + LLM)."""
+        ticker = ticker.upper()
+        self._update_progress("Ensemble scoring...", 0)
+
+        ensemble_file = Settings.SENTIMENT_DIR / f"{ticker}_{filing_date}_ensemble.json"
+        if ensemble_file.exists():
+            return PipelineResult(success=True, message="Ensemble already scored", data={"skipped": True})
+
+        sentiment_file = Settings.SENTIMENT_DIR / f"{ticker}_{filing_date}_sentiment.json"
+        if not sentiment_file.exists():
+            return PipelineResult(success=False, message="Sentiment data required before ensemble scoring")
+
+        try:
+            import json
+            from src.models.ensemble import EnsembleScorer, load_section_texts, load_historical_texts
+
+            sentiment_data = json.loads(sentiment_file.read_text(encoding="utf-8"))
+            section_texts = load_section_texts(ticker, filing_date)
+            historical_texts = load_historical_texts(ticker, exclude_date=filing_date)
+
+            scorer = EnsembleScorer()
+            result = scorer.score_filing(
+                ticker=ticker,
+                filing_date=filing_date,
+                sentiment_data=sentiment_data,
+                section_texts=section_texts,
+                historical_texts=historical_texts,
+            )
+            scorer.save_result(result)
+
+            signal = result["ensemble"]["signal"]
+            score = result["ensemble"]["score"]
+            return PipelineResult(
+                success=True,
+                message=f"Ensemble: {signal} ({score:+.3f})",
+                data={"signal": signal, "score": score},
+            )
+        except Exception as e:
+            logger.warning(f"Ensemble scoring failed for {ticker} {filing_date}: {e}")
+            return PipelineResult(success=False, message=f"Ensemble scoring failed: {e}", errors=[str(e)])
+
     def process_filing(self, ticker: str, filing_date: str) -> PipelineResult:
         """Run complete pipeline for a single filing."""
         ticker = ticker.upper()
@@ -304,7 +346,7 @@ class AutomatedPipeline:
         errors = []
 
         # Step 1: Parse
-        self._update_progress(f"Step 1/3: Parsing {filing_date}...", 0)
+        self._update_progress(f"Step 1/4: Parsing {filing_date}...", 0)
         parse_result = self.parse_filing(ticker, filing_date)
         if parse_result.success or (Settings.PROCESSED_DIR / f"{ticker}_{filing_date}.md").exists():
             steps_completed.append("parse")
@@ -312,25 +354,38 @@ class AutomatedPipeline:
             return PipelineResult(success=False, message="Pipeline failed at parsing", errors=parse_result.errors)
 
         # Step 2: Sections
-        self._update_progress("Step 2/3: Extracting sections...", 35)
+        self._update_progress("Step 2/4: Extracting sections...", 25)
         sections_result = self.extract_sections(ticker, filing_date)
         if sections_result.success:
             steps_completed.append("sections")
 
         # Step 3: Sentiment
-        self._update_progress("Step 3/3: Analyzing sentiment...", 70)
+        self._update_progress("Step 3/4: Analyzing sentiment...", 50)
         sentiment_result = self.analyze_sentiment(ticker, filing_date)
         if sentiment_result.success:
             steps_completed.append("sentiment")
         else:
             errors.extend(sentiment_result.errors)
 
+        # Step 4: Ensemble scoring
+        self._update_progress("Step 4/4: Ensemble scoring...", 75)
+        ensemble_result = self.score_ensemble(ticker, filing_date)
+        if ensemble_result.success:
+            steps_completed.append("ensemble")
+        else:
+            # Ensemble failure is non-fatal — FinBERT result is still usable
+            logger.info(f"Ensemble scoring skipped for {ticker} {filing_date}: {ensemble_result.message}")
+
         self._update_progress("Pipeline complete", 100)
 
         return PipelineResult(
             success="sentiment" in steps_completed,
             message=f"Completed: {', '.join(steps_completed)}",
-            data={"steps_completed": steps_completed, "sentiment": sentiment_result.data if sentiment_result.success else None},
+            data={
+                "steps_completed": steps_completed,
+                "sentiment": sentiment_result.data if sentiment_result.success else None,
+                "ensemble": ensemble_result.data if ensemble_result.success else None,
+            },
             errors=errors,
         )
 

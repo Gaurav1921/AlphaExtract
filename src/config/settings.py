@@ -100,6 +100,19 @@ class Settings:
     LOG_FORMAT = "%(asctime)s [%(name)s] %(levelname)s: %(message)s"
     LOG_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 
+    # --------------- Ensemble Scoring ---------------
+    ENSEMBLE_WEIGHT_FINBERT = 0.40
+    ENSEMBLE_WEIGHT_KEYWORDS = 0.25
+    ENSEMBLE_WEIGHT_LLM = 0.35
+
+    # --------------- Market Data ---------------
+    MARKET_DATA_DIR = DATA_DIR / "market"
+    MARKET_RETURN_WINDOWS = [30, 60, 90, 180, 365]
+    MARKET_FLAT_THRESHOLD = 0.02  # 2% absolute return = "flat"
+
+    # --------------- Backtesting ---------------
+    BACKTEST_DIR = DATA_DIR / "backtest"
+
     # --------------- Watchlist ---------------
     WATCHLIST_FILE = DATA_DIR / "watchlist.json"
 
@@ -109,7 +122,7 @@ class Settings:
         for dir_path in [
             cls.DATA_DIR, cls.RAW_DIR, cls.PROCESSED_DIR,
             cls.SECTIONS_DIR, cls.SENTIMENT_DIR, cls.ANOMALIES_DIR,
-            cls.LOG_DIR,
+            cls.MARKET_DATA_DIR, cls.BACKTEST_DIR, cls.LOG_DIR,
         ]:
             dir_path.mkdir(parents=True, exist_ok=True)
 
