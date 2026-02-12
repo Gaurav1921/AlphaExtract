@@ -70,6 +70,32 @@ class TestKeywordScorer:
         result = self.scorer.score(texts)
         assert result["method"] == "absolute"
 
+    def test_absolute_score_is_dampened(self):
+        """Absolute scores should be capped at ±0.5 (dampened)."""
+        # All bullish keywords
+        texts = {"item_7": "acquisition merger revenue growth strong demand " * 50}
+        result = self.scorer.score(texts)
+        assert result["method"] == "absolute"
+        assert result["score"] <= 0.5
+        # All bearish keywords
+        texts = {"item_1a": "litigation lawsuit cybersecurity data breach going concern " * 50}
+        result = self.scorer.score(texts)
+        assert result["method"] == "absolute"
+        assert result["score"] >= -0.5
+
+    def test_delta_score_is_dampened(self):
+        """Delta scores should be capped at ±0.6 (dampened)."""
+        # Massive bearish keyword spike vs clean history
+        current = {"item_1a": "litigation lawsuit going concern " * 50}
+        history = [
+            {"item_1a": "Normal business operations."},
+            {"item_1a": "Standard risk factors."},
+            {"item_1a": "No significant changes."},
+        ]
+        result = self.scorer.score(current, historical_texts=history)
+        assert result["method"] == "delta"
+        assert result["score"] >= -0.6
+
     def test_top_risks_populated(self):
         texts = {"item_1a": "litigation lawsuit cybersecurity data breach supply chain disruption " * 5}
         result = self.scorer.score(texts)
@@ -133,6 +159,19 @@ class TestLLMScorer:
         result = scorer._parse_response(response)
         assert result["outlook"] == "bullish"
         assert result["score"] == 0.65
+
+    def test_rate_limit_retry(self):
+        """Test that 429 errors trigger retry and eventually return unavailable."""
+        scorer = LLMScorer()
+        mock_client = MagicMock()
+        mock_client.models.generate_content.side_effect = Exception("429 RESOURCE_EXHAUSTED")
+        with patch.object(type(scorer), "client", new_callable=lambda: property(lambda self: mock_client)):
+            with patch("src.models.ensemble.time.sleep"):  # Don't actually sleep in tests
+                result = scorer.score("AAPL", {"item_7": "text"})
+        assert result["score"] == 0.0
+        assert result["available"] is False  # Error treated as unavailable
+        # Should have retried 3 times + 1 initial = 4 total calls
+        assert mock_client.models.generate_content.call_count == 4
 
 
 class TestEnsembleScorer:

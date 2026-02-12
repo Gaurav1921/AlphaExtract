@@ -13,6 +13,7 @@ average, and the final signal is derived from configurable thresholds.
 import json
 import logging
 import re
+import time
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -23,16 +24,18 @@ logger = logging.getLogger(__name__)
 
 
 # --- Keyword sentiment polarity ---
-# Positive: terms whose emergence/spike signals opportunity
-# Negative: terms whose emergence/spike signals risk
+# Bearish: terms whose emergence/spike signals risk (13 groups)
+# Bullish: terms whose emergence/spike signals opportunity (7 groups)
 _BEARISH_GROUPS = {
     "litigation", "regulatory", "sanctions", "antitrust",
-    "liquidity", "debt", "impairment", "revenue",
+    "liquidity", "debt", "impairment", "revenue_decline",
     "cybersecurity", "supply_chain", "workforce", "climate",
     "competition",
 }
 _BULLISH_GROUPS = {
     "acquisition", "ai_technology",
+    "revenue_growth", "margin_expansion", "shareholder_returns",
+    "innovation", "market_expansion",
 }
 
 
@@ -116,7 +119,11 @@ class KeywordScorer:
         }
 
     def _delta_score(self, current: Dict[str, int], history: List[Dict[str, int]]) -> Dict:
-        """Score based on change relative to historical average."""
+        """Score based on change relative to historical average.
+
+        Delta scoring is more informative than absolute, but still dampened
+        to ±0.6 to avoid extreme signals from keyword changes alone.
+        """
         # Compute historical average per keyword group
         avg_counts = {}
         for group in current:
@@ -150,12 +157,18 @@ class KeywordScorer:
             elif group in _BULLISH_GROUPS and delta > 0.5:
                 bullish_delta += min(delta, 3.0)
                 signals.append({"group": group, "type": "opportunity_increase", "delta": round(delta, 2)})
+            elif group in _BULLISH_GROUPS and delta < -0.3:
+                bearish_delta += min(abs(delta), 2.0)  # Opportunity decreasing is bearish
+                signals.append({"group": group, "type": "opportunity_decrease", "delta": round(delta, 2)})
 
         total_signal = bullish_delta + bearish_delta
         if total_signal == 0:
             score = 0.0
         else:
-            score = (bullish_delta - bearish_delta) / total_signal
+            raw_score = (bullish_delta - bearish_delta) / total_signal
+            # Dampen: delta scoring is more reliable than absolute but
+            # keywords alone shouldn't produce extreme signals
+            score = raw_score * 0.6
 
         score = max(-1.0, min(1.0, score))
 
@@ -234,20 +247,30 @@ Respond in EXACTLY this JSON format (no other text):
   "one_line_summary": "brief summary"
 }}"""
 
-        try:
-            response = self.client.models.generate_content(
-                model=Settings.GEMINI_MODEL, contents=prompt
-            )
-            return self._parse_response(response.text)
-        except Exception as e:
-            logger.warning(f"Gemini scoring failed for {ticker}: {e}")
-            return {
-                "score": 0.0,
-                "outlook": "error",
-                "confidence": "none",
-                "reasoning": str(e),
-                "available": True,
-            }
+        # Retry with exponential backoff for rate limits (429)
+        max_retries = 3
+        for attempt in range(max_retries + 1):
+            try:
+                response = self.client.models.generate_content(
+                    model=Settings.GEMINI_MODEL, contents=prompt
+                )
+                return self._parse_response(response.text)
+            except Exception as e:
+                error_str = str(e)
+                is_rate_limit = "429" in error_str or "RESOURCE_EXHAUSTED" in error_str
+                if is_rate_limit and attempt < max_retries:
+                    wait = 2 ** (attempt + 1)  # 2s, 4s, 8s
+                    logger.info(f"Rate limited, retrying in {wait}s (attempt {attempt + 1}/{max_retries})")
+                    time.sleep(wait)
+                    continue
+                logger.warning(f"Gemini scoring failed for {ticker}: {e}")
+                return {
+                    "score": 0.0,
+                    "outlook": "error",
+                    "confidence": "none",
+                    "reasoning": error_str,
+                    "available": False,  # Treat errors as unavailable for weight redistribution
+                }
 
     def _parse_response(self, text: str) -> Dict:
         """Parse Gemini's JSON response into a normalized score."""

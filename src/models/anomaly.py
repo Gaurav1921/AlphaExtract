@@ -29,7 +29,7 @@ TRACKED_KEYWORDS = {
         "liquidity": ["liquidity risk", "cash shortfall", "credit facility", "going concern"],
         "debt": ["debt covenant", "leverage ratio", "credit downgrade", "debt restructuring"],
         "impairment": ["goodwill impairment", "asset writedown", "restructuring charge"],
-        "revenue": ["revenue decline", "customer concentration", "contract termination"],
+        "revenue_decline": ["revenue decline", "customer concentration", "contract termination"],
     },
     "operational": {
         "cybersecurity": ["cybersecurity", "data breach", "ransomware", "security incident"],
@@ -41,6 +41,13 @@ TRACKED_KEYWORDS = {
         "competition": ["competitive pressure", "market share loss", "disruptive technology"],
         "acquisition": ["acquisition", "merger", "divestiture", "joint venture"],
         "ai_technology": ["artificial intelligence", "machine learning", "generative AI"],
+    },
+    "financial_strength": {
+        "revenue_growth": ["revenue growth", "revenue increased", "strong demand", "record revenue"],
+        "margin_expansion": ["margin improvement", "margin expansion", "operating leverage", "cost reduction"],
+        "shareholder_returns": ["share repurchase", "stock buyback", "dividend increase", "capital return"],
+        "innovation": ["new product", "product launch", "patent", "research and development"],
+        "market_expansion": ["market expansion", "new market", "international growth", "customer acquisition"],
     },
 }
 
