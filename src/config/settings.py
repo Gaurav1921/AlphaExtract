@@ -109,9 +109,9 @@ class Settings:
     LOG_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 
     # --------------- Ensemble Scoring ---------------
-    ENSEMBLE_WEIGHT_FINBERT = 0.40
-    ENSEMBLE_WEIGHT_KEYWORDS = 0.25
-    ENSEMBLE_WEIGHT_LLM = 0.35
+    ENSEMBLE_WEIGHT_FINBERT = 0.50
+    ENSEMBLE_WEIGHT_KEYWORDS = 0.30
+    ENSEMBLE_WEIGHT_LLM = 0.20
 
     # --------------- Market Data ---------------
     MARKET_DATA_DIR = DATA_DIR / "market"

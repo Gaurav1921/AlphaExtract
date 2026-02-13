@@ -397,8 +397,8 @@ Respond in EXACTLY this JSON format (no other text):
         }.get(outlook, 0.0)
 
         # Conservative confidence multipliers — LLMs tend to be overconfident,
-        # so we cap the maximum contribution
-        confidence_mult = {"high": 0.8, "medium": 0.5, "low": 0.25}.get(confidence, 0.4)
+        # so we cap the maximum contribution (max LLM score: ±0.6)
+        confidence_mult = {"high": 0.6, "medium": 0.5, "low": 0.25}.get(confidence, 0.4)
         score = outlook_base * confidence_mult
 
         return {
