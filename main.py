@@ -109,32 +109,33 @@ def ensemble_command(args):
     import json
 
     scorer = EnsembleScorer()
-    ticker = args.ticker.upper()
+    tickers = [t.upper() for t in args.tickers]
 
-    sentiment_data = get_all_sentiment_data(ticker)
-    if not sentiment_data:
-        logger.error(f"No sentiment data for {ticker} — run analyze first")
-        return
-
-    for filing_date, data in sentiment_data:
-        ensemble_file = Settings.SENTIMENT_DIR / f"{ticker}_{filing_date}_ensemble.json"
-        if ensemble_file.exists() and not args.force:
-            logger.info(f"Skipping {filing_date} (ensemble exists)")
+    for ticker in tickers:
+        sentiment_data = get_all_sentiment_data(ticker)
+        if not sentiment_data:
+            logger.error(f"No sentiment data for {ticker} — run analyze first")
             continue
 
-        section_texts = load_section_texts(ticker, filing_date)
-        historical_texts = load_historical_texts(ticker, exclude_date=filing_date)
+        for filing_date, data in sentiment_data:
+            ensemble_file = Settings.SENTIMENT_DIR / f"{ticker}_{filing_date}_ensemble.json"
+            if ensemble_file.exists() and not args.force:
+                logger.info(f"Skipping {ticker} {filing_date} (ensemble exists)")
+                continue
 
-        result = scorer.score_filing(
-            ticker=ticker,
-            filing_date=filing_date,
-            sentiment_data=data,
-            section_texts=section_texts,
-            historical_texts=historical_texts,
-        )
-        scorer.save_result(result)
+            section_texts = load_section_texts(ticker, filing_date)
+            historical_texts = load_historical_texts(ticker, exclude_date=filing_date)
 
-    logger.info(f"Ensemble scoring complete for {ticker}")
+            result = scorer.score_filing(
+                ticker=ticker,
+                filing_date=filing_date,
+                sentiment_data=data,
+                section_texts=section_texts,
+                historical_texts=historical_texts,
+            )
+            scorer.save_result(result)
+
+        logger.info(f"Ensemble scoring complete for {ticker}")
 
 
 def backtest_command(args):
@@ -245,6 +246,7 @@ Examples:
   python main.py analyze --ticker AAPL
   python main.py index --recreate
   python main.py anomaly TSLA
+  python main.py ensemble AAPL GOOGL MSFT --force
   python main.py pipeline AAPL --years 3
   python main.py dashboard --port 8501
         """,
@@ -286,7 +288,7 @@ Examples:
 
     # ensemble
     en = subparsers.add_parser("ensemble", help="Run ensemble scoring (FinBERT + Keywords + LLM)")
-    en.add_argument("ticker", help="Stock ticker")
+    en.add_argument("tickers", nargs="+", help="Stock tickers (e.g. AAPL GOOGL MSFT)")
     en.add_argument("--force", action="store_true", help="Re-score even if ensemble data exists")
     en.set_defaults(func=ensemble_command)
 
