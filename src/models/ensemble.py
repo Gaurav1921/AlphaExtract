@@ -279,8 +279,9 @@ class LLMScorer:
     def _build_prompt(self, ticker: str, section_texts: Dict[str, str]) -> str:
         mda_text = section_texts.get("item_7", "")[:4000]
         risk_text = section_texts.get("item_1a", "")[:2000]
-        return f"""You are a senior equity analyst. Based on the following excerpts from {ticker}'s \
-latest 10-K annual filing, provide your directional outlook.
+        return f"""You are a skeptical, contrarian equity analyst evaluating {ticker}'s 10-K filing.
+Your job is NOT to summarize management's optimistic spin. Your job is to find what management
+is hiding or downplaying. Management always makes things sound positive — look past that.
 
 ## MD&A (Management Discussion & Analysis) — Excerpt:
 {mda_text}
@@ -288,11 +289,22 @@ latest 10-K annual filing, provide your directional outlook.
 ## Risk Factors — Excerpt:
 {risk_text}
 
+## Your analysis should consider:
+- Is revenue/margin growth DECELERATING even if still positive?
+- Are risk factors INCREASING in number or severity vs. typical filings?
+- Is management using vague language to obscure problems?
+- Are there signs of market saturation, competitive pressure, or regulatory headwinds?
+- Would a short-seller find ammunition in this filing?
+
+Use a 5-point scale for your outlook. Most filings should be "slightly_bullish" or "slightly_bearish",
+NOT "bullish" or "bearish". Reserve strong signals for truly exceptional cases.
+
 Respond in EXACTLY this JSON format (no other text):
 {{
-  "outlook": "bullish" | "neutral" | "bearish",
+  "outlook": "bullish" | "slightly_bullish" | "neutral" | "slightly_bearish" | "bearish",
   "confidence": "high" | "medium" | "low",
-  "key_factors": ["factor 1", "factor 2", "factor 3"],
+  "bull_factors": ["positive factor 1", "positive factor 2"],
+  "bear_factors": ["negative factor 1", "negative factor 2"],
   "one_line_summary": "brief summary"
 }}"""
 
@@ -358,29 +370,40 @@ Respond in EXACTLY this JSON format (no other text):
                 }
 
     def _parse_response(self, text: str) -> Dict:
-        """Parse Gemini's JSON response into a normalized score."""
+        """Parse LLM JSON response into a normalized score."""
         # Strip markdown code blocks if present
         text = re.sub(r"```(?:json)?\s*", "", text).strip()
 
         try:
             data = json.loads(text)
         except json.JSONDecodeError:
-            logger.warning(f"Could not parse Gemini response as JSON: {text[:200]}")
+            logger.warning(f"Could not parse LLM response as JSON: {text[:200]}")
             return {"score": 0.0, "outlook": "parse_error", "confidence": "none", "reasoning": text[:300], "available": True}
 
-        outlook = data.get("outlook", "neutral").lower()
-        confidence = data.get("confidence", "medium").lower()
+        outlook = data.get("outlook", "neutral").lower().strip()
+        confidence = data.get("confidence", "medium").lower().strip()
 
-        # Map (outlook, confidence) to score
-        outlook_base = {"bullish": 1.0, "neutral": 0.0, "bearish": -1.0}.get(outlook, 0.0)
-        confidence_mult = {"high": 1.0, "medium": 0.65, "low": 0.3}.get(confidence, 0.5)
+        # 5-point outlook scale — "slightly" variants produce moderate signals,
+        # full "bullish"/"bearish" reserved for strong conviction
+        outlook_base = {
+            "bullish": 1.0,
+            "slightly_bullish": 0.4,
+            "neutral": 0.0,
+            "slightly_bearish": -0.4,
+            "bearish": -1.0,
+        }.get(outlook, 0.0)
+
+        # Conservative confidence multipliers — LLMs tend to be overconfident,
+        # so we cap the maximum contribution
+        confidence_mult = {"high": 0.8, "medium": 0.5, "low": 0.25}.get(confidence, 0.4)
         score = outlook_base * confidence_mult
 
         return {
             "score": round(score, 4),
             "outlook": outlook,
             "confidence": confidence,
-            "key_factors": data.get("key_factors", []),
+            "bull_factors": data.get("bull_factors", data.get("key_factors", [])),
+            "bear_factors": data.get("bear_factors", []),
             "summary": data.get("one_line_summary", ""),
             "available": True,
         }
