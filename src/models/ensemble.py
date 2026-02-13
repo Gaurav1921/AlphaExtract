@@ -279,9 +279,9 @@ class LLMScorer:
     def _build_prompt(self, ticker: str, section_texts: Dict[str, str]) -> str:
         mda_text = section_texts.get("item_7", "")[:4000]
         risk_text = section_texts.get("item_1a", "")[:2000]
-        return f"""You are a skeptical, contrarian equity analyst evaluating {ticker}'s 10-K filing.
-Your job is NOT to summarize management's optimistic spin. Your job is to find what management
-is hiding or downplaying. Management always makes things sound positive — look past that.
+        return f"""You are a senior equity research analyst scoring {ticker}'s 10-K filing
+for a quantitative trading system. Your score will be combined with other signals,
+so accuracy matters more than caution.
 
 ## MD&A (Management Discussion & Analysis) — Excerpt:
 {mda_text}
@@ -289,15 +289,18 @@ is hiding or downplaying. Management always makes things sound positive — look
 ## Risk Factors — Excerpt:
 {risk_text}
 
-## Your analysis should consider:
-- Is revenue/margin growth DECELERATING even if still positive?
-- Are risk factors INCREASING in number or severity vs. typical filings?
-- Is management using vague language to obscure problems?
-- Are there signs of market saturation, competitive pressure, or regulatory headwinds?
-- Would a short-seller find ammunition in this filing?
+## Scoring rubric (follow this strictly):
+- "bullish": Revenue AND margins growing, market position strengthening, few new risks
+- "slightly_bullish": Mostly positive but some concerns (slowing growth, new competition)
+- "neutral": Mixed signals — positives and negatives roughly balanced
+- "slightly_bearish": Concerning trends — declining metrics, rising risks, vague guidance
+- "bearish": Clear deterioration — revenue/margin decline, major new risks, weak outlook
 
-Use a 5-point scale for your outlook. Most filings should be "slightly_bullish" or "slightly_bearish",
-NOT "bullish" or "bearish". Reserve strong signals for truly exceptional cases.
+## Important:
+- Look at SPECIFIC NUMBERS in the MD&A (revenue growth %, margin changes, guidance)
+- A company with 20%+ revenue growth is bullish even if risk factors are long
+- A company with declining revenue is bearish even if management sounds optimistic
+- Let the DATA drive your decision, not the tone of the writing
 
 Respond in EXACTLY this JSON format (no other text):
 {{
@@ -313,8 +316,8 @@ Respond in EXACTLY this JSON format (no other text):
         response = self.client.chat.completions.create(
             model=self._model,
             messages=[{"role": "user", "content": prompt}],
-            temperature=0.1,
-            max_tokens=300,
+            temperature=0.3,
+            max_tokens=400,
         )
         return response.choices[0].message.content
 
