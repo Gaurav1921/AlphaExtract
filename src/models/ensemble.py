@@ -277,8 +277,8 @@ class LLMScorer:
         return self.client is not None
 
     def _build_prompt(self, ticker: str, section_texts: Dict[str, str]) -> str:
-        mda_text = section_texts.get("item_7", "")[:4000]
-        risk_text = section_texts.get("item_1a", "")[:2000]
+        mda_text = section_texts.get("item_7", "")[:2000]
+        risk_text = section_texts.get("item_1a", "")[:1000]
         return f"""You are a senior equity research analyst scoring {ticker}'s 10-K filing
 for a quantitative trading system. Your score will be combined with other signals,
 so accuracy matters more than caution.
