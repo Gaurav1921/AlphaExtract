@@ -124,6 +124,37 @@ class Settings:
     # --------------- Watchlist ---------------
     WATCHLIST_FILE = DATA_DIR / "watchlist.json"
 
+    # --------------- Sector / Ticker Universe ---------------
+    SECTOR_TICKERS = {
+        "Technology": ["AAPL", "MSFT", "GOOGL", "NVDA", "AMD", "META", "CRM", "ORCL", "ADBE", "INTC"],
+        "Healthcare": ["JNJ", "UNH", "PFE", "ABBV", "MRK", "LLY", "TMO", "ABT", "BMY", "AMGN"],
+        "Financials": ["JPM", "BAC", "GS", "MS", "WFC", "BLK", "C", "AXP", "SCHW", "USB"],
+        "Energy": ["XOM", "CVX", "COP", "SLB", "EOG", "MPC", "PSX", "VLO", "OXY", "HAL"],
+        "Consumer Discretionary": ["AMZN", "TSLA", "HD", "MCD", "NKE", "SBUX", "TJX", "LOW", "BKNG", "CMG"],
+        "Consumer Staples": ["PG", "KO", "PEP", "COST", "WMT", "PM", "MO", "CL", "MDLZ", "GIS"],
+        "Industrials": ["CAT", "HON", "UPS", "RTX", "BA", "DE", "LMT", "GE", "MMM", "UNP"],
+        "Real Estate": ["AMT", "PLD", "CCI", "EQIX", "SPG", "O", "PSA", "DLR", "WELL", "AVB"],
+    }
+
+    # All tickers across all sectors (flattened)
+    ALL_TICKERS = sorted({t for tickers in SECTOR_TICKERS.values() for t in tickers})
+
+    # Default tickers shown in dashboard (one per sector)
+    DEFAULT_TICKERS = {
+        "AAPL": "Apple Inc.",
+        "GOOGL": "Alphabet Inc.",
+        "MSFT": "Microsoft Corp.",
+        "TSLA": "Tesla Inc.",
+        "NVDA": "NVIDIA Corp.",
+        "AMD": "Advanced Micro Devices",
+        "JPM": "JPMorgan Chase",
+        "JNJ": "Johnson & Johnson",
+        "XOM": "ExxonMobil",
+        "AMZN": "Amazon.com",
+        "PG": "Procter & Gamble",
+        "CAT": "Caterpillar Inc.",
+    }
+
     @classmethod
     def init_dirs(cls):
         """Create all required directories. Call once at startup."""
