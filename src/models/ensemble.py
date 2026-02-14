@@ -478,7 +478,7 @@ class EnsembleScorer:
 
         # --- Signal 3: LLM ---
         llm_result = {"score": 0.0, "available": False}
-        if section_texts:
+        if section_texts and self.weight_llm > 0:
             llm_result = self.llm_scorer.score(ticker, section_texts)
 
         # --- Combine ---
