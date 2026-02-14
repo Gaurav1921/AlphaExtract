@@ -265,10 +265,14 @@ class LocalRAG:
                 conv_parts.append(f"{role}: {h['content'][:200]}")
             conv_context = "\n".join(conv_parts)
 
+        conv_section = ""
+        if conv_context:
+            conv_section = "Conversation context:\n" + conv_context + "\n\n"
+
         prompt = (
             "You are a financial analyst AI. Answer the question using ONLY the provided "
             "10-K filing excerpts. Be specific and cite which section/year.\n\n"
-            f"{'Conversation context:\\n' + conv_context + '\\n\\n' if conv_context else ''}"
+            f"{conv_section}"
             f"10-K Filing Excerpts:\n{context}\n\n"
             f"Question: {query}\n\nAnswer:"
         )
