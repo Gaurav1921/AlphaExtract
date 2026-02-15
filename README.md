@@ -37,15 +37,15 @@ AlphaExtract is an end-to-end quantitative analysis pipeline that:
 
 ```
 SEC EDGAR API --> Downloader --> Parser --> Splitter --> Sentiment (FinBERT)
+                      |                                       |
+                  Filing Alerts                         Ensemble Scoring
+                  (RSS Monitor)                       (FinBERT + Keywords + LLM)
                                                             |
-                                                     Ensemble Scoring
-                                                   (FinBERT + Keywords + LLM)
-                                                            |
-                                              +---------+---+---+---------+
-                                              |         |       |         |
-                                          Backtester  RAG Chat  Anomaly  Dashboard
-                                              |                 Detection
-                                          Calibrator
+                                    +-------+-------+-------+-------+-------+
+                                    |       |       |       |       |       |
+                                Backtest  RAG    Anomaly  Portfolio Options Dashboard
+                                    |     Chat   Detect.  Signals  Overlay  (11 pages)
+                                Calibrate
 ```
 
 ### Tech Stack
@@ -58,6 +58,9 @@ SEC EDGAR API --> Downloader --> Parser --> Splitter --> Sentiment (FinBERT)
 | RAG Chatbot | Local vector search (sentence-transformers + numpy) |
 | LLM Providers | Groq (free) / Gemini / Ollama (local) |
 | Market Data | yfinance |
+| Options Data | yfinance options chains |
+| Filing Alerts | SEC EDGAR submissions API |
+| Portfolio | Position-weighted signal aggregation |
 | Dashboard | Streamlit + Plotly |
 | Database | Supabase (optional) |
 
@@ -125,8 +128,24 @@ python main.py calibrate AAPL MSFT
 # Full pipeline (download -> parse -> split -> sentiment -> ensemble)
 python main.py pipeline AAPL --years 5
 
+# Full pipeline (download -> parse -> split -> sentiment -> ensemble)
+python main.py pipeline AAPL --years 5
+
 # Launch dashboard
 python main.py dashboard
+
+# Monitor SEC for new filings
+python main.py alerts AAPL MSFT GOOGL --days 30
+
+# Continuous monitoring (polls every hour)
+python main.py alerts AAPL MSFT --poll --interval 3600
+
+# Portfolio signal aggregation
+python main.py portfolio AAPL MSFT GOOGL JPM XOM --save
+python main.py portfolio --sector Technology
+
+# Options sentiment overlay
+python main.py options AAPL MSFT --save
 ```
 
 ### Dashboard
@@ -135,7 +154,7 @@ python main.py dashboard
 streamlit run dashboard/app.py
 ```
 
-The dashboard includes 8 pages:
+The dashboard includes 11 pages:
 
 | Page | What it does |
 |------|-------------|
@@ -146,6 +165,9 @@ The dashboard includes 8 pages:
 | **RAG Chat** | Ask questions about 10-K filings using local RAG |
 | **Anomalies** | Detect unusual patterns vs historical filings |
 | **Sector Analytics** | Cross-sector comparison, ticker universe browser |
+| **Portfolio** | Multi-holding aggregation, sector breakdown, risk metrics |
+| **Options Overlay** | Put/call ratios, IV skew, composite filing+options signal |
+| **Filing Alerts** | SEC EDGAR monitoring for new 10-K filings |
 | **Data Management** | Download pipeline with progress tracking |
 
 ---
@@ -182,6 +204,36 @@ The dashboard includes 8 pages:
 - Trend detection (improving / stable / deteriorating)
 - Word count change tracking
 
+### Real-Time Filing Alerts
+
+- Monitors SEC EDGAR for new 10-K filings via submissions API
+- Ticker watchlist with automatic CIK resolution
+- State persistence to avoid duplicate alerts
+- Callback system for custom notifications
+- Continuous polling mode or one-shot check
+- CLI: `python main.py alerts AAPL MSFT --poll`
+
+### Portfolio Signal Aggregation
+
+- Combine signals across multiple holdings
+- Position-weighted or equal-weighted modes
+- Sector breakdown with weighted average scores
+- Risk concentration metrics (HHI, max exposure)
+- Signal distribution analysis
+- Multi-portfolio comparison
+- CLI: `python main.py portfolio AAPL MSFT JPM --save`
+
+### Options Sentiment Overlay
+
+- Fetches options chain data from yfinance
+- Put/call open interest and volume ratios
+- Implied volatility skew (put IV vs call IV)
+- Options-derived sentiment score [-1, +1]
+- Composite signal blending filing + options sentiment
+- Configurable weighting (default: 70% filing / 30% options)
+- Agreement detection between filing and options signals
+- CLI: `python main.py options AAPL MSFT --save`
+
 ### Sector Coverage (80 Tickers, 8 Sectors)
 
 | Sector | Example Tickers |
@@ -204,7 +256,7 @@ AlphaExtract/
 ├── main.py                          # CLI entry point
 ├── requirements.txt                 # Dependencies
 ├── dashboard/
-│   ├── app.py                       # Streamlit dashboard (v2.0)
+│   ├── app.py                       # Streamlit dashboard (v3.0, 11 pages)
 │   ├── components/
 │   │   └── data_management.py       # Reusable UI components
 │   ├── pages/
@@ -222,10 +274,14 @@ AlphaExtract/
 │   │   ├── sentiment.py             # FinBERT sentiment analyzer
 │   │   ├── ensemble.py              # 3-signal ensemble scoring
 │   │   └── anomaly.py               # Anomaly detection
+│   ├── alerts/
+│   │   └── sec_monitor.py           # SEC EDGAR filing alert monitor
 │   ├── analysis/
-│   │   └── comparison.py            # Multi-quarter comparison
+│   │   ├── comparison.py            # Multi-quarter comparison
+│   │   └── portfolio.py             # Portfolio signal aggregation
 │   ├── market/
-│   │   └── price_data.py            # Yahoo Finance market data
+│   │   ├── price_data.py            # Yahoo Finance market data
+│   │   └── options_overlay.py       # Options sentiment overlay
 │   ├── backtesting/
 │   │   ├── backtester.py            # Backtest engine
 │   │   ├── calibrator.py            # Parameter calibration
@@ -244,7 +300,12 @@ AlphaExtract/
 │   ├── test_anomaly.py
 │   ├── test_chunker.py
 │   ├── test_pipeline.py
-│   └── test_settings.py
+│   ├── test_settings.py
+│   ├── test_local_rag.py
+│   ├── test_comparison.py
+│   ├── test_sec_monitor.py
+│   ├── test_portfolio.py
+│   └── test_options_overlay.py
 └── data/
     ├── raw/                         # Downloaded 10-K HTML
     ├── processed/                   # Parsed markdown + tables
@@ -252,7 +313,8 @@ AlphaExtract/
     ├── sentiment/                   # FinBERT + ensemble scores
     ├── anomalies/                   # Anomaly reports
     ├── backtest/                    # Backtest results
-    └── market/                      # Cached price data
+    ├── market/                      # Cached price data + options
+    └── portfolios/                  # Portfolio analysis results
 ```
 
 ---
@@ -288,13 +350,17 @@ pytest tests/test_ensemble.py -v
 - [x] Multi-quarter comparison engine
 - [x] Sector analytics (80 tickers, 8 sectors)
 - [x] Streamlit dashboard v2.0 (8 pages)
+- [x] Real-time filing alerts (SEC EDGAR monitor)
+- [x] Portfolio-level signal aggregation
+- [x] Options sentiment overlay
+- [x] Streamlit dashboard v3.0 (11 pages)
 
 ### Planned
 
-- [ ] Real-time filing alerts (SEC RSS feeds)
-- [ ] Portfolio-level signal aggregation
-- [ ] Options sentiment overlay
 - [ ] API endpoint (FastAPI)
+- [ ] Webhook notifications for filing alerts
+- [ ] Custom portfolio weight editor in dashboard
+- [ ] Historical options data tracking
 
 ---
 
