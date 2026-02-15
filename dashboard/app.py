@@ -532,7 +532,7 @@ def _render_backtest_detail(data: dict, title: str):
                         "Precision": f"{s['precision']:.1%}",
                     })
             if prec_data:
-                st.dataframe(pd.DataFrame(prec_data), use_container_width=True, hide_index=True)
+                st.dataframe(pd.DataFrame(prec_data), width="stretch", hide_index=True)
 
         # Confusion matrix
         cm = data.get("confusion_matrix", {})
@@ -549,7 +549,7 @@ def _render_backtest_detail(data: dict, title: str):
                         "Down": row.get("down", 0),
                     })
             if cm_rows:
-                st.dataframe(pd.DataFrame(cm_rows), use_container_width=True, hide_index=True)
+                st.dataframe(pd.DataFrame(cm_rows), width="stretch", hide_index=True)
 
         # Individual results
         results = data.get("results", [])
@@ -558,7 +558,7 @@ def _render_backtest_detail(data: dict, title: str):
             res_df = pd.DataFrame(results)
             cols_to_show = ["ticker", "filing_date", "signal", "score", "actual_return_pct", "actual_direction"]
             available_cols = [c for c in cols_to_show if c in res_df.columns]
-            st.dataframe(res_df[available_cols], use_container_width=True, hide_index=True)
+            st.dataframe(res_df[available_cols], width="stretch", hide_index=True)
 
 
 # ============================================================================
@@ -646,7 +646,7 @@ if page == "Dashboard":
             )])
             fig.update_layout(yaxis_title="Score", yaxis_range=[-1, 1], height=350,
                               margin=dict(l=20, r=20, t=20, b=20))
-            st.plotly_chart(fig, use_container_width=True, key=f"section_chart_{selected_ticker}_{year_filter}")
+            st.plotly_chart(fig, width="stretch", key=f"section_chart_{selected_ticker}_{year_filter}")
 
         with col_right:
             st.markdown("#### Historical Trend")
@@ -665,7 +665,7 @@ if page == "Dashboard":
                 fig.add_hrect(y0=-1, y1=-0.2, fillcolor="red", opacity=0.1, line_width=0)
                 fig.update_layout(yaxis_title="Score", yaxis_range=[-1, 1], height=350,
                                   margin=dict(l=20, r=20, t=20, b=20), showlegend=False)
-                st.plotly_chart(fig, use_container_width=True, key=f"trend_{selected_ticker}")
+                st.plotly_chart(fig, width="stretch", key=f"trend_{selected_ticker}")
             else:
                 st.info(f"Need 2+ filings for trend chart. Currently have {len(history)}.")
 
@@ -722,7 +722,7 @@ elif page == "Multi-Quarter":
                     row["Ens. Signal"] = y["ensemble"]["signal"]
                 table_data.append(row)
 
-            st.dataframe(pd.DataFrame(table_data), use_container_width=True, hide_index=True)
+            st.dataframe(pd.DataFrame(table_data), width="stretch", hide_index=True)
 
             st.markdown("---")
 
@@ -751,7 +751,7 @@ elif page == "Multi-Quarter":
             fig.add_hline(y=0, line_dash="dash", line_color="gray", opacity=0.3)
             fig.update_layout(yaxis_title="Score", yaxis_range=[-1, 1], height=450,
                               legend=dict(orientation="h", yanchor="bottom", y=1.02))
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
 
             # Deltas table
             if comparison["deltas"]:
@@ -768,7 +768,7 @@ elif page == "Multi-Quarter":
                     if "ensemble_delta" in d:
                         row["Ensemble Delta"] = f"{d['ensemble_delta']:+.3f}"
                     delta_data.append(row)
-                st.dataframe(pd.DataFrame(delta_data), use_container_width=True, hide_index=True)
+                st.dataframe(pd.DataFrame(delta_data), width="stretch", hide_index=True)
 
             # Section deep dive
             st.markdown("---")
@@ -781,7 +781,7 @@ elif page == "Multi-Quarter":
                 dive = section_deep_dive(selected_ticker, section_choice)
                 if dive["data"]:
                     dive_df = pd.DataFrame(dive["data"])
-                    st.dataframe(dive_df, use_container_width=True, hide_index=True)
+                    st.dataframe(dive_df, width="stretch", hide_index=True)
                     st.caption(f"Word count change: {dive['word_count_change_pct']:+.1f}% over the period")
 
 
@@ -868,7 +868,7 @@ elif page == "Ensemble":
         )])
         fig.update_layout(yaxis_title="Weighted Score", height=350,
                           margin=dict(l=20, r=20, t=20, b=20))
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
 
         # Keyword detail
         kw_detail = signals.get("keywords", {}).get("detail", {})
@@ -960,7 +960,7 @@ elif page == "Backtesting":
                 ])
                 fig.update_layout(barmode="group", yaxis_title="Score", height=400,
                                   yaxis_range=[0, 1])
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, width="stretch")
 
             # Show detailed results for each model
             for key in ["finbert", "ensemble"]:
@@ -1060,9 +1060,9 @@ elif page == "Anomalies":
         with col1:
             st.markdown(f"**Available data:** {len(available_years)} years")
         with col2:
-            analyze_btn = st.button("Analyze", type="primary", use_container_width=True)
+            analyze_btn = st.button("Analyze", type="primary", width="stretch")
         with col3:
-            if st.button("Reload", use_container_width=True):
+            if st.button("Reload", width="stretch"):
                 st.session_state.anomaly_report = None
                 st.session_state.anomaly_ticker = None
                 st.rerun()
@@ -1159,9 +1159,9 @@ elif page == "Sector Analytics":
                 textposition="outside",
             )])
             fig.update_layout(yaxis_range=[-1, 1], height=400, yaxis_title="Sentiment Score")
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
 
-            st.dataframe(df, use_container_width=True, hide_index=True)
+            st.dataframe(df, width="stretch", hide_index=True)
         else:
             st.info("No sentiment data available. Process some filings first!")
 
@@ -1184,7 +1184,7 @@ elif page == "Sector Analytics":
                         "Sentiment Data": "Yes" if has_sentiment else "No",
                         "Ensemble Data": "Yes" if has_ensemble else "No",
                     })
-                st.dataframe(pd.DataFrame(sector_data), use_container_width=True, hide_index=True)
+                st.dataframe(pd.DataFrame(sector_data), width="stretch", hide_index=True)
 
         # Cross-sector comparison (only tickers with data)
         st.markdown("---")
@@ -1219,7 +1219,7 @@ elif page == "Sector Analytics":
                 textposition="outside",
             )])
             fig.update_layout(yaxis_title="Avg Sentiment", yaxis_range=[-1, 1], height=400)
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
         else:
             st.info("No sector data available yet. Process filings across sectors to see comparison.")
 
@@ -1257,7 +1257,7 @@ elif page == "Sector Analytics":
                                 "Financials (8)": round(data.get("item_8", 0), 3),
                             })
                     if rows:
-                        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+                        st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
             else:
                 st.info("No tickers with data. Process some filings first!")
 
@@ -1299,7 +1299,7 @@ elif page == "Data Management":
                 "Sentiment": "Yes" if getattr(info, "sentiment_analyzed", False) else "-",
                 "Complete": "Done" if getattr(info, "is_complete", False) else "Pending",
             })
-        st.dataframe(pd.DataFrame(data), use_container_width=True, hide_index=True)
+        st.dataframe(pd.DataFrame(data), width="stretch", hide_index=True)
 
         complete = sum(1 for s in status.values() if getattr(s, "is_complete", False))
         c1, c2, c3 = st.columns(3)
@@ -1327,7 +1327,7 @@ elif page == "Data Management":
         auto = st.checkbox("Auto-process", value=True, key="auto_process_check")
     with c3:
         st.markdown("<br>", unsafe_allow_html=True)
-        start = st.button("Download", type="primary", use_container_width=True)
+        start = st.button("Download", type="primary", width="stretch")
 
     if start and AutomatedPipeline:
         pipeline = AutomatedPipeline()
