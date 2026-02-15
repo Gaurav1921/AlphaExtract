@@ -11,6 +11,9 @@ Usage:
     python main.py index [--recreate]
     python main.py anomaly TSLA
     python main.py dashboard [--port 8501]
+    python main.py alerts AAPL MSFT --days 30
+    python main.py portfolio AAPL MSFT GOOGL
+    python main.py options AAPL MSFT
 """
 
 import sys
@@ -234,6 +237,107 @@ def pipeline_command(args):
             logger.error(f"  - {error}")
 
 
+def alerts_command(args):
+    """Monitor SEC EDGAR for new 10-K filings."""
+    from src.alerts.sec_monitor import SECMonitor
+
+    tickers = [t.upper() for t in args.tickers]
+    monitor = SECMonitor(watchlist=tickers, poll_interval=args.interval)
+
+    def log_alert(alert):
+        print(f"  NEW FILING: {alert.ticker} ({alert.company_name}) - {alert.filing_date}")
+        print(f"  URL: {alert.filing_url}")
+
+    monitor.on_new_filing(log_alert)
+
+    if args.poll:
+        logger.info(f"Starting continuous monitoring for {', '.join(tickers)}")
+        monitor.poll(days_back=args.days)
+    else:
+        alerts = monitor.check_once(days_back=args.days)
+        if alerts:
+            logger.info(f"Found {len(alerts)} new filing(s)")
+        else:
+            logger.info("No new filings found")
+
+
+def portfolio_command(args):
+    """Aggregate signals across a portfolio of tickers."""
+    from src.analysis.portfolio import (
+        equal_weight_portfolio,
+        sector_portfolio,
+        save_portfolio,
+    )
+
+    if args.sector:
+        result = sector_portfolio(args.sector)
+    else:
+        tickers = [t.upper() for t in args.tickers]
+        result = equal_weight_portfolio(tickers, name=args.name)
+
+    print(f"\n{'=' * 60}")
+    print(f"  PORTFOLIO: {result.name}")
+    print(f"{'=' * 60}")
+    print(f"  Holdings: {result.holdings_count} ({result.holdings_with_data} with data)")
+    print(f"  Coverage: {result.coverage_pct}%")
+    print(f"  Weighted Sentiment: {result.weighted_sentiment:+.4f}")
+    if result.weighted_ensemble is not None:
+        print(f"  Weighted Ensemble:  {result.weighted_ensemble:+.4f}")
+    print(f"  Signal: {result.portfolio_signal}")
+
+    if result.sector_breakdown:
+        print(f"\n  Sector Breakdown:")
+        for sector, data in result.sector_breakdown.items():
+            print(f"    {sector}: {data['avg_score']:+.4f} ({data['signal']}) [{data['weight']:.1%}]")
+
+    print(f"\n  Signal Distribution:")
+    for signal, count in result.signal_distribution.items():
+        print(f"    {signal}: {count}")
+
+    risk = result.risk_concentration
+    print(f"\n  Risk Concentration:")
+    print(f"    Max holding: {risk['max_single_holding']['ticker']} ({risk['max_single_holding']['weight']:.1%})")
+    if risk["max_single_sector"]["sector"]:
+        print(f"    Max sector:  {risk['max_single_sector']['sector']} ({risk['max_single_sector']['weight']:.1%})")
+    print(f"    HHI: {risk['herfindahl_index']:.4f}")
+
+    if args.save:
+        save_portfolio(result)
+
+
+def options_command(args):
+    """Fetch options data and compute composite signals."""
+    from src.market.options_overlay import OptionsOverlay
+
+    overlay = OptionsOverlay(
+        filing_weight=args.filing_weight,
+        options_weight=args.options_weight,
+    )
+    tickers = [t.upper() for t in args.tickers]
+
+    for ticker in tickers:
+        print(f"\n{'=' * 60}")
+        print(f"  OPTIONS OVERLAY: {ticker}")
+        print(f"{'=' * 60}")
+
+        signal = overlay.composite_signal(ticker)
+
+        if signal.filing_sentiment is not None:
+            print(f"  Filing Sentiment: {signal.filing_sentiment:+.4f} ({signal.filing_signal})")
+        else:
+            print(f"  Filing Sentiment: N/A")
+        if signal.ensemble_score is not None:
+            print(f"  Ensemble Score:   {signal.ensemble_score:+.4f} ({signal.ensemble_signal})")
+
+        print(f"  Options Score:    {signal.options_score:+.4f} ({signal.options_signal})")
+        print(f"  Composite Score:  {signal.composite_score:+.4f} ({signal.composite_signal})")
+        print(f"  Agreement:        {'Yes' if signal.agreement else 'No'}")
+        print(f"  Weights:          Filing {signal.filing_weight:.0%} / Options {signal.options_weight:.0%}")
+
+        if args.save:
+            overlay.save_composite(signal)
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="AlphaExtract - AI-Powered 10-K Financial Intelligence",
@@ -249,6 +353,9 @@ Examples:
   python main.py ensemble AAPL GOOGL MSFT --force
   python main.py pipeline AAPL --years 3
   python main.py dashboard --port 8501
+  python main.py alerts AAPL MSFT --days 30
+  python main.py portfolio AAPL MSFT GOOGL --save
+  python main.py options AAPL MSFT --save
         """,
     )
     parser.add_argument("--log-level", default="INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR"])
@@ -318,6 +425,30 @@ Examples:
     db = subparsers.add_parser("dashboard", help="Launch Streamlit dashboard")
     db.add_argument("--port", type=int, default=8501, help="Port number")
     db.set_defaults(func=dashboard_command)
+
+    # alerts
+    al = subparsers.add_parser("alerts", help="Monitor SEC EDGAR for new 10-K filings")
+    al.add_argument("tickers", nargs="+", help="Stock tickers to watch")
+    al.add_argument("--days", type=int, default=30, help="Look back N days (default 30)")
+    al.add_argument("--poll", action="store_true", help="Continuously poll (default: check once)")
+    al.add_argument("--interval", type=int, default=3600, help="Poll interval in seconds (default 3600)")
+    al.set_defaults(func=alerts_command)
+
+    # portfolio
+    pf = subparsers.add_parser("portfolio", help="Aggregate signals across a portfolio")
+    pf.add_argument("tickers", nargs="*", help="Stock tickers (equal-weighted)")
+    pf.add_argument("--sector", default=None, help="Use all tickers from a sector instead")
+    pf.add_argument("--name", default="My Portfolio", help="Portfolio name")
+    pf.add_argument("--save", action="store_true", help="Save results to JSON")
+    pf.set_defaults(func=portfolio_command)
+
+    # options
+    op = subparsers.add_parser("options", help="Options sentiment overlay")
+    op.add_argument("tickers", nargs="+", help="Stock tickers")
+    op.add_argument("--filing-weight", type=float, default=0.70, help="Filing signal weight (default 0.70)")
+    op.add_argument("--options-weight", type=float, default=0.30, help="Options signal weight (default 0.30)")
+    op.add_argument("--save", action="store_true", help="Save results to JSON")
+    op.set_defaults(func=options_command)
 
     args = parser.parse_args()
 

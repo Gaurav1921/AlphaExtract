@@ -124,6 +124,17 @@ class Settings:
     # --------------- Watchlist ---------------
     WATCHLIST_FILE = DATA_DIR / "watchlist.json"
 
+    # --------------- Alerts ---------------
+    ALERT_STATE_FILE = DATA_DIR / "alert_state.json"
+    ALERT_POLL_INTERVAL = 3600  # seconds between polls
+
+    # --------------- Portfolio ---------------
+    PORTFOLIO_DIR = DATA_DIR / "portfolios"
+
+    # --------------- Options Overlay ---------------
+    OPTIONS_FILING_WEIGHT = 0.70
+    OPTIONS_WEIGHT = 0.30
+
     # --------------- Sector / Ticker Universe ---------------
     SECTOR_TICKERS = {
         "Technology": ["AAPL", "MSFT", "GOOGL", "NVDA", "AMD", "META", "CRM", "ORCL", "ADBE", "INTC"],
@@ -161,7 +172,7 @@ class Settings:
         for dir_path in [
             cls.DATA_DIR, cls.RAW_DIR, cls.PROCESSED_DIR,
             cls.SECTIONS_DIR, cls.SENTIMENT_DIR, cls.ANOMALIES_DIR,
-            cls.MARKET_DATA_DIR, cls.BACKTEST_DIR, cls.LOG_DIR,
+            cls.MARKET_DATA_DIR, cls.BACKTEST_DIR, cls.PORTFOLIO_DIR, cls.LOG_DIR,
         ]:
             dir_path.mkdir(parents=True, exist_ok=True)
 
