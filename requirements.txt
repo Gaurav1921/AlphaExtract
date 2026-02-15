@@ -1,18 +1,36 @@
-# Core Dependencies
+# Core
 docling==2.68.0
 requests==2.31.0
 beautifulsoup4==4.12.3
 pandas==2.2.0
 python-dotenv==1.0.0
 
-# Phase 2 Dependencies (Sentiment Analysis)
+# ML / NLP
 transformers==4.36.0
 torch==2.1.2
 sentencepiece==0.1.99
+sentence-transformers>=2.2.0
+
+# Market Data
+yfinance>=0.2.30
 
 # Data Processing
 numpy==1.26.3
 openpyxl==3.1.2
+
+# Search
+opensearch-py>=2.4.0
+
+# LLM
+google-genai>=1.0.0
+openai>=1.12.0
+
+# Database
+supabase>=2.0.0
+
+# Dashboard
+streamlit>=1.28.0
+plotly>=5.18.0
 
 # Testing
 pytest==7.4.3

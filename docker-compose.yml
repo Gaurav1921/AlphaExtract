@@ -1,17 +1,16 @@
 # Docker Compose for OpenSearch
 # Single-node cluster for development
 
-version: '3'
-
 services:
   opensearch:
     image: opensearchproject/opensearch:2.11.0
     container_name: alphaextract-opensearch
+    restart: unless-stopped
     environment:
       - discovery.type=single-node
       - bootstrap.memory_lock=true
-      - "OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m"  # Limit memory usage
-      - "DISABLE_SECURITY_PLUGIN=true"  # Disable security for local dev
+      - "OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m"
+      - "DISABLE_SECURITY_PLUGIN=true"
     ulimits:
       memlock:
         soft: -1
@@ -22,25 +21,39 @@ services:
     volumes:
       - opensearch-data:/usr/share/opensearch/data
     ports:
-      - 9200:9200  # REST API
-      - 9600:9600  # Performance analyzer
+      - "127.0.0.1:9200:9200"
+      - "127.0.0.1:9600:9600"
     networks:
       - opensearch-net
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9200/_cluster/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          memory: 1g
 
   opensearch-dashboards:
     image: opensearchproject/opensearch-dashboards:2.11.0
     container_name: alphaextract-dashboards
+    restart: unless-stopped
     ports:
-      - 5601:5601
-    expose:
-      - "5601"
+      - "127.0.0.1:5601:5601"
     environment:
       - 'OPENSEARCH_HOSTS=["http://opensearch:9200"]'
       - "DISABLE_SECURITY_DASHBOARDS_PLUGIN=true"
     networks:
       - opensearch-net
     depends_on:
-      - opensearch
+      opensearch:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 512m
 
 volumes:
   opensearch-data:

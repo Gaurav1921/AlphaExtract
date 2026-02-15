@@ -1,14 +1,8 @@
 """
 SEC EDGAR 10-K Downloader
 --------------------------
-Fetches the latest 10-K filing for any public company.
-
-Learning objectives:
-- HTTP requests with proper headers (SEC requirement)
-- JSON API consumption
-- Error handling with retries
-- File I/O and directory management
-- Logging for production debugging
+Downloads latest and historical 10-K filings from SEC EDGAR.
+Uses centralized settings, proper retry logic, and rate limiting.
 """
 
 import requests
@@ -16,307 +10,210 @@ import time
 import logging
 from pathlib import Path
 from datetime import datetime
-from typing import Optional
+from typing import Optional, List, Dict
 import json
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+from src.config.settings import Settings
+
 logger = logging.getLogger(__name__)
 
 
 class SECDownloader:
-    """
-    Downloads 10-K filings from SEC EDGAR database.
-    
-    Design principles:
-    - Retry logic for network failures
-    - Proper SEC User-Agent headers
-    - Rate limiting (10 req/sec max)
-    - No hardcoded ticker mappings
-    """
-    
-    def __init__(self, email: str = "student@example.com"):
-        """
-        Initialize downloader with required SEC headers.
-        
-        Args:
-            email: Your email (SEC requirement for identification)
-        """
-        self.base_url = "https://www.sec.gov"
-        self.data_url = "https://data.sec.gov"
+    """Downloads 10-K filings from SEC EDGAR database."""
+
+    def __init__(self, email: str = None):
+        email = email or Settings.SEC_USER_EMAIL
         self.headers = {
-            "User-Agent": f"AlphaExtract/1.0 ({email})",
-            "Accept-Encoding": "gzip, deflate"
+            "User-Agent": f"AlphaExtract/{Settings.VERSION} ({email})",
+            "Accept-Encoding": "gzip, deflate",
         }
         self.session = requests.Session()
         self.session.headers.update(self.headers)
-        
-        self.raw_dir = Path("data/raw")
-        self.raw_dir.mkdir(parents=True, exist_ok=True)
-    
+        self.raw_dir = Settings.RAW_DIR
+
     def get_cik(self, ticker: str) -> Optional[str]:
-        """
-        Convert ticker symbol to CIK (Central Index Key).
-        
-        Uses SEC's company tickers JSON file for lookup.
-        Falls back to alternative endpoint if primary fails.
-        
-        Args:
-            ticker: Stock ticker (e.g., 'TSLA', 'AAPL')
-            
-        Returns:
-            CIK number as string, or None if not found
-        """
+        """Convert ticker symbol to CIK (Central Index Key)."""
+        ticker = ticker.upper().strip()
+        if not ticker.isalpha() or len(ticker) > 5:
+            logger.error(f"Invalid ticker format: {ticker}")
+            return None
+
         try:
-            url = "https://www.sec.gov/files/company_tickers_exchange.json"
-            response = requests.get(url, headers=self.headers, timeout=10)
+            response = self.session.get(
+                Settings.SEC_TICKERS_URL,
+                timeout=Settings.SEC_REQUEST_TIMEOUT,
+            )
             response.raise_for_status()
-            
             data = response.json()
-            
-            if 'data' in data:
-                for row in data['data']:
-                    if len(row) >= 3 and row[2].upper() == ticker.upper():
+
+            if "data" in data:
+                for row in data["data"]:
+                    if len(row) >= 3 and str(row[2]).upper() == ticker:
                         cik = str(row[0]).zfill(10)
-                        logger.info(f"Found CIK {cik} for ticker {ticker}")
+                        logger.info(f"Found CIK {cik} for {ticker}")
                         return cik
-            
-            logger.warning(f"Ticker {ticker} not found in primary API, trying fallback...")
-            
-            fallback_url = "https://www.sec.gov/files/company_tickers.json"
-            response = requests.get(fallback_url, headers=self.headers, timeout=10)
+
+            # Fallback endpoint
+            logger.debug(f"{ticker} not in primary API, trying fallback")
+            response = self.session.get(
+                Settings.SEC_TICKERS_FALLBACK_URL,
+                timeout=Settings.SEC_REQUEST_TIMEOUT,
+            )
             response.raise_for_status()
-            
             data = response.json()
+
             for entry in data.values():
-                if entry['ticker'].upper() == ticker.upper():
-                    cik = str(entry['cik_str']).zfill(10)
-                    logger.info(f"Found CIK {cik} for ticker {ticker} (fallback)")
+                if entry["ticker"].upper() == ticker:
+                    cik = str(entry["cik_str"]).zfill(10)
+                    logger.info(f"Found CIK {cik} for {ticker} (fallback)")
                     return cik
-            
+
             logger.error(f"Ticker {ticker} not found in SEC database")
             return None
-            
-        except Exception as e:
-            logger.error(f"Failed to get CIK for {ticker}: {e}")
-            logger.info("Tip: You can find CIKs manually at https://www.sec.gov/edgar/searchedgar/companysearch.html")
+
+        except requests.RequestException as e:
+            logger.error(f"Network error looking up CIK for {ticker}: {e}")
             return None
-    
-    def get_latest_10k_url(self, cik: str) -> Optional[dict]:
-        """
-        Find the most recent 10-K filing URL.
-        
-        Args:
-            cik: Company's CIK number
-            
-        Returns:
-            Dict with filing metadata or None if not found
-        """
+
+    def get_10k_filings(self, cik: str, limit: int = 1) -> List[Dict]:
+        """Retrieve metadata for 10-K filings from SEC submissions."""
         try:
-            url = f"{self.data_url}/submissions/CIK{cik}.json"
-            response = self.session.get(url, timeout=10)
+            url = f"{Settings.SEC_BASE_URL}/submissions/CIK{cik}.json"
+            response = self.session.get(url, timeout=Settings.SEC_REQUEST_TIMEOUT)
             response.raise_for_status()
-            
+
             data = response.json()
-            filings = data['filings']['recent']
-            
-            for i, form in enumerate(filings['form']):
-                if form == '10-K':
-                    accession = filings['accessionNumber'][i].replace('-', '')
-                    filing_date = filings['filingDate'][i]
-                    primary_doc = filings['primaryDocument'][i]
-                    
-                    cik_trimmed = cik.lstrip('0')
-                    
+            filings = data["filings"]["recent"]
+            results = []
+
+            for i, form in enumerate(filings["form"]):
+                if form == "10-K":
+                    accession = filings["accessionNumber"][i].replace("-", "")
+                    filing_date = filings["filingDate"][i]
+                    primary_doc = filings["primaryDocument"][i]
+
+                    # CIK in URL paths should not have leading zeros
+                    cik_trimmed = cik.lstrip("0") or "0"
+
                     download_url = (
-                        f"{self.base_url}/Archives/edgar/data/"
+                        f"{Settings.SEC_FILING_URL}/Archives/edgar/data/"
                         f"{cik_trimmed}/{accession}/{primary_doc}"
                     )
-                    
-                    viewer_url = (
-                        f"{self.base_url}/ix?doc=/Archives/edgar/data/"
-                        f"{cik_trimmed}/{accession}/{primary_doc}"
+
+                    results.append(
+                        {
+                            "url": download_url,
+                            "filing_date": filing_date,
+                            "accession": accession,
+                            "document": primary_doc,
+                            "year": filing_date[:4],
+                        }
                     )
-                    
-                    logger.info(f"Found 10-K filed on {filing_date}")
-                    logger.info(f"Download URL: {download_url}")
-                    
-                    return {
-                        'url': download_url,
-                        'viewer_url': viewer_url,
-                        'filing_date': filing_date,
-                        'accession': accession,
-                        'document': primary_doc
-                    }
-            
-            logger.error(f"No 10-K found for CIK {cik}")
-            return None
-            
-        except Exception as e:
-            logger.error(f"Failed to get 10-K URL for CIK {cik}: {e}")
-            return None
-    
-    def download_filing(
-        self, 
-        ticker: str, 
-        max_retries: int = 3,
-        retry_delay: int = 2
-    ) -> Optional[Path]:
+                    if len(results) >= limit:
+                        break
+
+            logger.info(f"Found {len(results)} 10-K filing(s) for CIK {cik}")
+            return results
+
+        except requests.RequestException as e:
+            logger.error(f"Failed to fetch filings for CIK {cik}: {e}")
+            return []
+
+    def download_filing(self, ticker: str, filing_info: Dict = None) -> Optional[Path]:
         """
-        Download the latest 10-K for a given ticker.
-        
-        Args:
-            ticker: Stock ticker symbol
-            max_retries: Number of retry attempts on failure
-            retry_delay: Seconds to wait between retries
-            
-        Returns:
-            Path to downloaded file, or None if failed
+        Download a single 10-K filing.
+
+        If filing_info is None, looks up the latest 10-K automatically.
         """
-        logger.info(f"Starting download for {ticker}")
-        
-        cik = self.get_cik(ticker)
-        if not cik:
-            return None
-        
-        filing_info = self.get_latest_10k_url(cik)
-        if not filing_info:
-            return None
-        
-        url = filing_info['url']
-        filing_date = filing_info['filing_date']
-        
-        for attempt in range(1, max_retries + 1):
+        ticker = ticker.upper()
+
+        if filing_info is None:
+            cik = self.get_cik(ticker)
+            if not cik:
+                return None
+            filings = self.get_10k_filings(cik, limit=1)
+            if not filings:
+                logger.error(f"No 10-K found for {ticker}")
+                return None
+            filing_info = filings[0]
+
+        url = filing_info["url"]
+        filing_date = filing_info["filing_date"]
+
+        for attempt in range(1, Settings.SEC_MAX_RETRIES + 1):
             try:
-                logger.info(f"Downloading from {url} (attempt {attempt}/{max_retries})")
-                
-                time.sleep(0.1)
-                
-                response = self.session.get(url, timeout=30)
+                time.sleep(Settings.SEC_RATE_LIMIT_DELAY)
+                logger.info(f"Downloading {ticker} {filing_date} (attempt {attempt})")
+
+                response = self.session.get(url, timeout=Settings.SEC_REQUEST_TIMEOUT)
                 response.raise_for_status()
-                
-                content_type = response.headers.get('Content-Type', '')
-                if 'html' in content_type or url.endswith('.htm'):
-                    ext = 'html'
-                else:
-                    ext = 'txt'
-                
+
+                content_type = response.headers.get("Content-Type", "").lower()
+                ext = "html" if ("html" in content_type or url.endswith(".htm")) else "txt"
+
                 filename = f"{ticker}_10K_{filing_date}.{ext}"
                 filepath = self.raw_dir / filename
-                
                 filepath.write_bytes(response.content)
-                file_size = len(response.content) / 1024
-                
-                logger.info(
-                    f"✓ Successfully downloaded {ticker} 10-K "
-                    f"({file_size:.1f} KB) → {filepath}"
-                )
-                
+                file_size_kb = len(response.content) / 1024
+
+                # Save download metadata alongside the file
                 metadata = {
-                    'ticker': ticker,
-                    'cik': cik,
-                    'filing_date': filing_date,
-                    'download_date': datetime.now().isoformat(),
-                    'download_url': url,
-                    'viewer_url': filing_info.get('viewer_url', url),
-                    'file_size_kb': file_size
+                    "ticker": ticker,
+                    "cik": filing_info.get("accession", "")[:10],
+                    "filing_date": filing_date,
+                    "download_date": datetime.now().isoformat(),
+                    "download_url": url,
+                    "file_size_kb": round(file_size_kb, 1),
                 }
-                
-                metadata_path = filepath.with_suffix('.json')
-                metadata_path.write_text(json.dumps(metadata, indent=2))
-                
-                return filepath
-                
-            except requests.exceptions.RequestException as e:
-                logger.warning(
-                    f"Attempt {attempt}/{max_retries} failed for {ticker}: {e}"
+                filepath.with_suffix(".json").write_text(
+                    json.dumps(metadata, indent=2), encoding="utf-8"
                 )
-                
-                if attempt < max_retries:
-                    logger.info(f"Retrying in {retry_delay} seconds...")
-                    time.sleep(retry_delay)
+
+                logger.info(f"Downloaded {ticker} {filing_date} ({file_size_kb:.1f} KB)")
+                return filepath
+
+            except requests.RequestException as e:
+                logger.warning(f"Attempt {attempt} failed for {ticker} {filing_date}: {e}")
+                if attempt < Settings.SEC_MAX_RETRIES:
+                    time.sleep(Settings.SEC_RETRY_DELAY * attempt)
                 else:
-                    logger.error(
-                        f"Failed to download {ticker} after {max_retries} attempts | "
-                        f"URL: {url} | "
-                        f"Error: {e} | "
-                        f"Timestamp: {datetime.now()}"
-                    )
+                    logger.error(f"Failed to download {ticker} {filing_date} after {Settings.SEC_MAX_RETRIES} attempts")
                     return None
-        
+
         return None
-    
-    def download_multiple(self, tickers: list[str]) -> dict:
-        """
-        Download 10-Ks for multiple companies.
-        
-        Args:
-            tickers: List of ticker symbols
-            
-        Returns:
-            Dict with success/failure counts and paths
-        """
-        results = {
-            'successful': [],
-            'failed': [],
-            'total': len(tickers)
-        }
-        
-        logger.info(f"Starting batch download for {len(tickers)} companies")
-        
+
+    def download_multiple(self, tickers: List[str], years: int = 1) -> Dict:
+        """Download 10-Ks for multiple companies."""
+        results = {"successful": [], "failed": [], "total": len(tickers)}
+        logger.info(f"Batch download: {len(tickers)} companies, {years} year(s) each")
+
         for ticker in tickers:
-            filepath = self.download_filing(ticker)
-            
-            if filepath:
-                results['successful'].append({'ticker': ticker, 'path': str(filepath)})
-            else:
-                results['failed'].append(ticker)
-            
-            time.sleep(0.1)
-        
-        logger.info(
-            f"Batch download complete: "
-            f"{len(results['successful'])} succeeded, "
-            f"{len(results['failed'])} failed"
-        )
-        
+            ticker = ticker.upper()
+            cik = self.get_cik(ticker)
+            if not cik:
+                results["failed"].append(ticker)
+                continue
+
+            filings = self.get_10k_filings(cik, limit=years)
+            if not filings:
+                results["failed"].append(ticker)
+                continue
+
+            for filing_info in filings:
+                # Skip if already downloaded
+                filing_date = filing_info["filing_date"]
+                existing = list(self.raw_dir.glob(f"{ticker}_10K_{filing_date}.*"))
+                if any(f.suffix in (".html", ".txt") for f in existing):
+                    results["successful"].append({"ticker": ticker, "path": str(existing[0]), "skipped": True})
+                    continue
+
+                filepath = self.download_filing(ticker, filing_info)
+                if filepath:
+                    results["successful"].append({"ticker": ticker, "path": str(filepath)})
+                else:
+                    results["failed"].append(ticker)
+
+            time.sleep(Settings.SEC_RATE_LIMIT_DELAY)
+
+        logger.info(f"Batch complete: {len(results['successful'])} succeeded, {len(results['failed'])} failed")
         return results
-
-
-if __name__ == "__main__":
-    print("=" * 70)
-    print("SEC EDGAR Downloader - Test Suite")
-    print("=" * 70)
-    
-    downloader = SECDownloader(email="your.email@example.com")
-    
-    print("\n[TEST 1] Downloading Tesla (TSLA) 10-K...")
-    tesla_path = downloader.download_filing("TSLA")
-    
-    if tesla_path:
-        print(f"✓ Success! File saved to: {tesla_path}")
-        print(f"  File size: {tesla_path.stat().st_size / 1024:.1f} KB")
-    else:
-        print("✗ Failed to download")
-    
-    print("\n[TEST 2] Downloading multiple companies...")
-    test_tickers = ["AAPL", "MSFT", "GOOGL"]
-    results = downloader.download_multiple(test_tickers)
-    
-    print(f"\nResults:")
-    print(f"  Successful: {len(results['successful'])}")
-    print(f"  Failed: {len(results['failed'])}")
-    
-    if results['successful']:
-        print("\n  Downloaded files:")
-        for item in results['successful']:
-            print(f"    • {item['ticker']}: {item['path']}")
-    
-    if results['failed']:
-        print(f"\n  Failed tickers: {', '.join(results['failed'])}")
-    
-    print("\n" + "=" * 70)
-    print("Test complete! Check the data/raw/ directory for files.")
-    print("=" * 70)
