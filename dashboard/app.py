@@ -493,6 +493,75 @@ with st.sidebar:
 
 
 # ============================================================================
+# HELPER: BACKTEST DETAIL RENDERER (must be defined before page routing)
+# ============================================================================
+
+
+def _render_backtest_detail(data: dict, title: str):
+    """Render detailed backtest results."""
+    with st.expander(f"**{title} Detail**", expanded=True):
+        config = data.get("config", {})
+        summary = data.get("summary", {})
+
+        st.markdown(f"Tickers: {', '.join(config.get('tickers', []))}")
+        st.markdown(f"Mode: {config.get('mode', '?')} | Window: {config.get('return_window_days', '?')} days")
+
+        mc1, mc2, mc3, mc4 = st.columns(4)
+        with mc1:
+            st.metric("Total Signals", summary.get("total_signals", 0))
+        with mc2:
+            st.metric("Hit Rate", f"{summary.get('hit_rate', 0):.1%}")
+        with mc3:
+            st.metric("Dir. Accuracy", f"{summary.get('directional_accuracy', 0):.1%}")
+        with mc4:
+            sharpe = summary.get("sharpe_ratio")
+            st.metric("Sharpe", f"{sharpe:.3f}" if sharpe else "N/A")
+
+        # Precision by signal
+        precision = data.get("precision_by_signal", {})
+        if precision:
+            st.markdown("**Precision by Signal:**")
+            prec_data = []
+            for sig in ["STRONG_BUY", "BUY", "HOLD", "SELL", "STRONG_SELL"]:
+                if sig in precision:
+                    s = precision[sig]
+                    prec_data.append({
+                        "Signal": sig,
+                        "Correct": s["correct"],
+                        "Total": s["total"],
+                        "Precision": f"{s['precision']:.1%}",
+                    })
+            if prec_data:
+                st.dataframe(pd.DataFrame(prec_data), use_container_width=True, hide_index=True)
+
+        # Confusion matrix
+        cm = data.get("confusion_matrix", {})
+        if cm:
+            st.markdown("**Confusion Matrix:**")
+            cm_rows = []
+            for predicted in ["bullish", "neutral", "bearish"]:
+                if predicted in cm:
+                    row = cm[predicted]
+                    cm_rows.append({
+                        "Predicted": predicted.title(),
+                        "Up": row.get("up", 0),
+                        "Flat": row.get("flat", 0),
+                        "Down": row.get("down", 0),
+                    })
+            if cm_rows:
+                st.dataframe(pd.DataFrame(cm_rows), use_container_width=True, hide_index=True)
+
+        # Individual results
+        results = data.get("results", [])
+        if results:
+            st.markdown("**Individual Signals:**")
+            res_df = pd.DataFrame(results)
+            cols_to_show = ["ticker", "filing_date", "signal", "score", "actual_return_pct", "actual_direction"]
+            available_cols = [c for c in cols_to_show if c in res_df.columns]
+            st.dataframe(res_df[available_cols], use_container_width=True, hide_index=True)
+
+
+# ============================================================================
 # PAGE: DASHBOARD
 # ============================================================================
 
@@ -900,70 +969,6 @@ elif page == "Backtesting":
 
         else:
             _render_backtest_detail(bt_data, "Backtest")
-
-
-def _render_backtest_detail(data: dict, title: str):
-    """Render detailed backtest results."""
-    with st.expander(f"**{title} Detail**", expanded=True):
-        config = data.get("config", {})
-        summary = data.get("summary", {})
-
-        st.markdown(f"Tickers: {', '.join(config.get('tickers', []))}")
-        st.markdown(f"Mode: {config.get('mode', '?')} | Window: {config.get('return_window_days', '?')} days")
-
-        mc1, mc2, mc3, mc4 = st.columns(4)
-        with mc1:
-            st.metric("Total Signals", summary.get("total_signals", 0))
-        with mc2:
-            st.metric("Hit Rate", f"{summary.get('hit_rate', 0):.1%}")
-        with mc3:
-            st.metric("Dir. Accuracy", f"{summary.get('directional_accuracy', 0):.1%}")
-        with mc4:
-            sharpe = summary.get("sharpe_ratio")
-            st.metric("Sharpe", f"{sharpe:.3f}" if sharpe else "N/A")
-
-        # Precision by signal
-        precision = data.get("precision_by_signal", {})
-        if precision:
-            st.markdown("**Precision by Signal:**")
-            prec_data = []
-            for sig in ["STRONG_BUY", "BUY", "HOLD", "SELL", "STRONG_SELL"]:
-                if sig in precision:
-                    s = precision[sig]
-                    prec_data.append({
-                        "Signal": sig,
-                        "Correct": s["correct"],
-                        "Total": s["total"],
-                        "Precision": f"{s['precision']:.1%}",
-                    })
-            if prec_data:
-                st.dataframe(pd.DataFrame(prec_data), use_container_width=True, hide_index=True)
-
-        # Confusion matrix
-        cm = data.get("confusion_matrix", {})
-        if cm:
-            st.markdown("**Confusion Matrix:**")
-            cm_rows = []
-            for predicted in ["bullish", "neutral", "bearish"]:
-                if predicted in cm:
-                    row = cm[predicted]
-                    cm_rows.append({
-                        "Predicted": predicted.title(),
-                        "Up": row.get("up", 0),
-                        "Flat": row.get("flat", 0),
-                        "Down": row.get("down", 0),
-                    })
-            if cm_rows:
-                st.dataframe(pd.DataFrame(cm_rows), use_container_width=True, hide_index=True)
-
-        # Individual results
-        results = data.get("results", [])
-        if results:
-            st.markdown("**Individual Signals:**")
-            res_df = pd.DataFrame(results)
-            cols_to_show = ["ticker", "filing_date", "signal", "score", "actual_return_pct", "actual_direction"]
-            available_cols = [c for c in cols_to_show if c in res_df.columns]
-            st.dataframe(res_df[available_cols], use_container_width=True, hide_index=True)
 
 
 # ============================================================================
