@@ -82,6 +82,27 @@ try:
 except Exception:
     Settings = None
 
+try:
+    from src.alerts.sec_monitor import SECMonitor
+except Exception:
+    SECMonitor = None
+
+try:
+    from src.analysis.portfolio import (
+        aggregate_portfolio,
+        equal_weight_portfolio,
+        sector_portfolio,
+    )
+except Exception:
+    aggregate_portfolio = None
+    equal_weight_portfolio = None
+    sector_portfolio = None
+
+try:
+    from src.market.options_overlay import OptionsOverlay
+except Exception:
+    OptionsOverlay = None
+
 
 # ============================================================================
 # PAGE CONFIG
@@ -464,6 +485,9 @@ with st.sidebar:
             "RAG Chat",
             "Anomalies",
             "Sector Analytics",
+            "Portfolio",
+            "Options Overlay",
+            "Filing Alerts",
             "Data Management",
         ],
         label_visibility="collapsed",
@@ -1263,6 +1287,284 @@ elif page == "Sector Analytics":
 
 
 # ============================================================================
+# PAGE: PORTFOLIO
+# ============================================================================
+
+elif page == "Portfolio":
+    st.markdown('<h1 class="main-header">Portfolio Analysis</h1>', unsafe_allow_html=True)
+
+    if aggregate_portfolio is None:
+        st.error("Portfolio module not available. Check imports.")
+    else:
+        st.markdown("Aggregate sentiment signals across your holdings.")
+
+        # Portfolio builder
+        st.markdown("#### Build Portfolio")
+        mode = st.radio("Mode", ["Custom Tickers", "Sector Portfolio"], horizontal=True, key="portfolio_mode")
+
+        if mode == "Custom Tickers":
+            all_tickers = Settings.ALL_TICKERS if Settings and hasattr(Settings, "ALL_TICKERS") else []
+            selected = st.multiselect(
+                "Select tickers",
+                options=all_tickers,
+                default=["AAPL", "MSFT", "GOOGL", "JPM", "XOM"] if all_tickers else [],
+                key="portfolio_tickers",
+            )
+            portfolio_name = st.text_input("Portfolio Name", value="My Portfolio", key="portfolio_name")
+
+            if st.button("Analyze Portfolio", type="primary") and selected:
+                with st.spinner("Aggregating signals..."):
+                    result = equal_weight_portfolio(selected, name=portfolio_name)
+
+                # Summary metrics
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    st.metric("Holdings", result.holdings_count)
+                with col2:
+                    st.metric("Coverage", f"{result.coverage_pct}%")
+                with col3:
+                    color = SIGNAL_COLORS.get(result.portfolio_signal, "#9E9E9E")
+                    st.metric("Signal", result.portfolio_signal)
+                with col4:
+                    st.metric("Sentiment", f"{result.weighted_sentiment:+.4f}")
+
+                if result.weighted_ensemble is not None:
+                    st.metric("Ensemble Score", f"{result.weighted_ensemble:+.4f}")
+
+                st.markdown("---")
+
+                # Holdings table
+                st.markdown("#### Holdings")
+                holdings_data = []
+                for h in result.holdings:
+                    holdings_data.append({
+                        "Ticker": h["ticker"],
+                        "Weight": f"{h['weight']:.1%}",
+                        "Sentiment": f"{h['sentiment_score']:+.4f}" if h["sentiment_score"] is not None else "N/A",
+                        "Signal": h["sentiment_signal"] or "N/A",
+                        "Sector": h["sector"] or "Unknown",
+                    })
+                st.dataframe(pd.DataFrame(holdings_data), width="stretch", hide_index=True)
+
+                # Sector breakdown
+                if result.sector_breakdown:
+                    st.markdown("#### Sector Breakdown")
+                    sector_names = list(result.sector_breakdown.keys())
+                    sector_scores = [result.sector_breakdown[s]["avg_score"] for s in sector_names]
+                    sector_weights = [result.sector_breakdown[s]["weight"] for s in sector_names]
+
+                    fig = go.Figure(data=[go.Bar(
+                        x=sector_names, y=sector_scores,
+                        marker_color=["#3b82f6" if s >= 0 else "#ef4444" for s in sector_scores],
+                        text=[f"{s:+.3f}" for s in sector_scores],
+                        textposition="outside",
+                    )])
+                    fig.update_layout(yaxis_title="Avg Sentiment", yaxis_range=[-1, 1], height=400)
+                    st.plotly_chart(fig, width="stretch")
+
+                # Risk concentration
+                st.markdown("#### Risk Concentration")
+                risk = result.risk_concentration
+                rcol1, rcol2, rcol3 = st.columns(3)
+                with rcol1:
+                    st.metric("Largest Holding", f"{risk['max_single_holding'].get('ticker', 'N/A')}")
+                with rcol2:
+                    sector_val = risk["max_single_sector"].get("sector", "N/A")
+                    st.metric("Largest Sector", sector_val if sector_val else "N/A")
+                with rcol3:
+                    st.metric("HHI (Concentration)", f"{risk['herfindahl_index']:.4f}")
+
+        else:
+            sectors = list(Settings.SECTOR_TICKERS.keys()) if Settings and hasattr(Settings, "SECTOR_TICKERS") else []
+            chosen_sector = st.selectbox("Select Sector", sectors, key="portfolio_sector")
+
+            if st.button("Analyze Sector", type="primary") and chosen_sector:
+                with st.spinner(f"Analyzing {chosen_sector}..."):
+                    result = sector_portfolio(chosen_sector)
+
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("Holdings", result.holdings_count)
+                with col2:
+                    st.metric("Coverage", f"{result.coverage_pct}%")
+                with col3:
+                    st.metric("Signal", result.portfolio_signal)
+
+                st.metric("Weighted Sentiment", f"{result.weighted_sentiment:+.4f}")
+
+                if result.holdings:
+                    holdings_data = []
+                    for h in result.holdings:
+                        holdings_data.append({
+                            "Ticker": h["ticker"],
+                            "Sentiment": f"{h['sentiment_score']:+.4f}" if h["sentiment_score"] is not None else "N/A",
+                            "Signal": h["sentiment_signal"] or "N/A",
+                        })
+                    st.dataframe(pd.DataFrame(holdings_data), width="stretch", hide_index=True)
+
+
+# ============================================================================
+# PAGE: OPTIONS OVERLAY
+# ============================================================================
+
+elif page == "Options Overlay":
+    st.markdown('<h1 class="main-header">Options Sentiment Overlay</h1>', unsafe_allow_html=True)
+
+    if OptionsOverlay is None:
+        st.error("Options overlay module not available. Check imports.")
+    else:
+        st.markdown("Combine filing sentiment with options market data for composite signals.")
+
+        overlay = OptionsOverlay()
+        ticker_input = st.text_input("Ticker", value=selected_ticker, key="options_ticker").upper()
+
+        col_a, col_b = st.columns(2)
+        with col_a:
+            f_weight = st.slider("Filing Weight", 0.0, 1.0, 0.70, 0.05, key="opt_fweight")
+        with col_b:
+            o_weight = st.slider("Options Weight", 0.0, 1.0, 0.30, 0.05, key="opt_oweight")
+
+        overlay.filing_weight = f_weight
+        overlay.options_weight = o_weight
+
+        if st.button("Compute Composite Signal", type="primary"):
+            with st.spinner(f"Fetching options data for {ticker_input}..."):
+                signal = overlay.composite_signal(ticker_input)
+
+            # Summary
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Composite Score", f"{signal.composite_score:+.4f}")
+            with col2:
+                st.metric("Composite Signal", signal.composite_signal)
+            with col3:
+                agree_text = "Agree" if signal.agreement else "Disagree"
+                st.metric("Filing/Options", agree_text)
+
+            st.markdown("---")
+
+            # Component breakdown
+            st.markdown("#### Signal Components")
+            comp_col1, comp_col2, comp_col3 = st.columns(3)
+
+            with comp_col1:
+                st.markdown("**Filing Sentiment**")
+                if signal.filing_sentiment is not None:
+                    st.metric("Score", f"{signal.filing_sentiment:+.4f}")
+                    st.caption(f"Signal: {signal.filing_signal}")
+                    if signal.filing_date:
+                        st.caption(f"Filing: {signal.filing_date}")
+                else:
+                    st.info("No filing data")
+
+            with comp_col2:
+                st.markdown("**Ensemble**")
+                if signal.ensemble_score is not None:
+                    st.metric("Score", f"{signal.ensemble_score:+.4f}")
+                    st.caption(f"Signal: {signal.ensemble_signal}")
+                else:
+                    st.info("No ensemble data")
+
+            with comp_col3:
+                st.markdown("**Options**")
+                st.metric("Score", f"{signal.options_score:+.4f}")
+                st.caption(f"Signal: {signal.options_signal}")
+
+            # Visual bar
+            st.markdown("---")
+            st.markdown("#### Weighted Contribution")
+            names = ["Filing/Ensemble", "Options"]
+            base = signal.ensemble_score if signal.ensemble_score is not None else (signal.filing_sentiment or 0)
+            vals = [base * f_weight, signal.options_score * o_weight]
+            colors = ["#3b82f6" if v >= 0 else "#ef4444" for v in vals]
+
+            fig = go.Figure(data=[go.Bar(
+                x=names, y=vals,
+                marker_color=colors,
+                text=[f"{v:+.4f}" for v in vals],
+                textposition="outside",
+            )])
+            fig.update_layout(yaxis_title="Weighted Score", height=350,
+                              margin=dict(l=20, r=20, t=20, b=20))
+            st.plotly_chart(fig, width="stretch")
+
+
+# ============================================================================
+# PAGE: FILING ALERTS
+# ============================================================================
+
+elif page == "Filing Alerts":
+    st.markdown('<h1 class="main-header">Filing Alerts</h1>', unsafe_allow_html=True)
+
+    if SECMonitor is None:
+        st.error("SEC Monitor module not available. Check imports.")
+    else:
+        st.markdown("Monitor SEC EDGAR for new 10-K filings from watched tickers.")
+
+        # Watchlist management
+        st.markdown("#### Watchlist")
+        all_tickers = Settings.ALL_TICKERS if Settings and hasattr(Settings, "ALL_TICKERS") else []
+
+        watchlist = st.multiselect(
+            "Tickers to monitor",
+            options=all_tickers,
+            default=["AAPL", "MSFT", "GOOGL", "TSLA", "NVDA"] if all_tickers else [],
+            key="alert_watchlist",
+        )
+
+        days_back = st.slider("Look back (days)", 7, 365, 30, key="alert_days")
+
+        if st.button("Check for New Filings", type="primary") and watchlist:
+            monitor = SECMonitor(watchlist=watchlist)
+
+            with st.spinner(f"Checking SEC EDGAR for {len(watchlist)} tickers..."):
+                alerts = monitor.check_once(days_back=days_back)
+
+            if alerts:
+                st.success(f"Found {len(alerts)} new filing(s)!")
+                alert_data = []
+                for a in alerts:
+                    alert_data.append({
+                        "Ticker": a.ticker,
+                        "Company": a.company_name,
+                        "Filing Date": a.filing_date,
+                        "Detected": a.detected_at[:19],
+                    })
+                st.dataframe(pd.DataFrame(alert_data), width="stretch", hide_index=True)
+
+                # Show details for each alert
+                for a in alerts:
+                    with st.expander(f"{a.ticker} - {a.company_name} ({a.filing_date})"):
+                        st.markdown(f"**Accession:** {a.accession_number}")
+                        st.markdown(f"**URL:** {a.filing_url}")
+                        st.markdown(f"**Detected at:** {a.detected_at}")
+            else:
+                st.info("No new filings found in the selected time range.")
+
+            # Show monitor status
+            st.markdown("---")
+            st.markdown("#### Monitor Status")
+            status = monitor.status()
+            scol1, scol2, scol3 = st.columns(3)
+            with scol1:
+                st.metric("Watching", status["watchlist_count"])
+            with scol2:
+                st.metric("Seen Filings", status["seen_filings"])
+            with scol3:
+                st.metric("CIK Cache", status["cik_cache_size"])
+
+        st.markdown("---")
+        st.markdown("#### About Filing Alerts")
+        st.markdown(
+            "This tool queries SEC EDGAR's submissions API for recent 10-K filings. "
+            "For continuous monitoring, use the CLI:\n\n"
+            "```bash\n"
+            "python main.py alerts AAPL MSFT GOOGL --poll --interval 3600\n"
+            "```"
+        )
+
+
+# ============================================================================
 # PAGE: DATA MANAGEMENT
 # ============================================================================
 
@@ -1359,7 +1661,7 @@ elif page == "Data Management":
 
 st.markdown("---")
 st.markdown(
-    '<div style="text-align: center; color: #94a3b8;">AlphaExtract v2.0.0 | '
-    "Built with Streamlit, FinBERT, Ensemble Scoring & Local RAG</div>",
+    '<div style="text-align: center; color: #94a3b8;">AlphaExtract v3.0.0 | '
+    "Built with Streamlit, FinBERT, Ensemble Scoring, Local RAG, Portfolio & Options</div>",
     unsafe_allow_html=True,
 )
