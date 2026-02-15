@@ -7,7 +7,7 @@ portfolio-level metrics. Supports position-weighted and equal-weighted modes.
 
 import json
 import logging
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -59,39 +59,81 @@ def _get_ticker_sector(ticker: str) -> Optional[str]:
     return None
 
 
-def _load_latest_sentiment(ticker: str) -> Optional[Dict]:
-    """Load the most recent sentiment data for a ticker."""
-    pattern = f"{ticker.upper()}_*_sentiment.json"
+def _load_latest_json(ticker: str, suffix: str) -> Optional[Dict]:
+    """
+    Load the most recent JSON file matching {TICKER}_*_{suffix}.json.
+    Shared loader for sentiment, ensemble, and other signal files.
+    """
+    pattern = f"{ticker.upper()}_*_{suffix}.json"
     files = sorted(Settings.SENTIMENT_DIR.glob(pattern))
     if not files:
         return None
 
-    latest = files[-1]
     try:
-        data = json.loads(latest.read_text(encoding="utf-8"))
-        # Extract filing date from filename
-        parts = latest.stem.split("_")
+        data = json.loads(files[-1].read_text(encoding="utf-8"))
+        # Extract filing date from filename (TICKER_DATE_type.json)
+        parts = files[-1].stem.split("_")
         if len(parts) >= 2:
             data["_filing_date"] = parts[1]
         return data
-    except Exception as e:
-        logger.warning(f"Failed to load sentiment for {ticker}: {e}")
+    except (json.JSONDecodeError, OSError) as e:
+        logger.warning(f"Failed to load {suffix} for {ticker}: {e}")
         return None
 
 
-def _load_latest_ensemble(ticker: str) -> Optional[Dict]:
-    """Load the most recent ensemble data for a ticker."""
-    pattern = f"{ticker.upper()}_*_ensemble.json"
-    files = sorted(Settings.SENTIMENT_DIR.glob(pattern))
-    if not files:
+def _weighted_average(items: list, score_attr: str) -> Optional[float]:
+    """Compute weighted average of a score attribute across holdings."""
+    filtered = [h for h in items if getattr(h, score_attr) is not None]
+    if not filtered:
         return None
+    weight_sum = sum(h.weight for h in filtered)
+    if weight_sum <= 0:
+        return 0.0
+    return sum(getattr(h, score_attr) * h.weight for h in filtered) / weight_sum
 
-    latest = files[-1]
-    try:
-        return json.loads(latest.read_text(encoding="utf-8"))
-    except Exception as e:
-        logger.warning(f"Failed to load ensemble for {ticker}: {e}")
-        return None
+
+def _build_sector_breakdown(
+    sector_scores: Dict[str, List[Tuple[float, float]]],
+) -> Dict[str, Dict]:
+    """Build sector-level aggregated scores."""
+    breakdown = {}
+    for sector, scores_weights in sector_scores.items():
+        total_weight = sum(w for _, w in scores_weights)
+        avg_score = (
+            sum(s * w for s, w in scores_weights) / total_weight
+            if total_weight > 0 else 0
+        )
+        breakdown[sector] = {
+            "avg_score": round(avg_score, 4),
+            "signal": Settings.generate_signal(avg_score),
+            "weight": round(total_weight, 4),
+            "count": len(scores_weights),
+        }
+    return breakdown
+
+
+def _build_risk_concentration(
+    holding_signals: List[HoldingSignal],
+    sector_breakdown: Dict[str, Dict],
+) -> Dict:
+    """Compute risk concentration metrics."""
+    max_holding = max(holding_signals, key=lambda h: h.weight) if holding_signals else None
+    max_sector = (
+        max(sector_breakdown.items(), key=lambda x: x[1]["weight"])
+        if sector_breakdown else None
+    )
+
+    return {
+        "max_single_holding": {
+            "ticker": max_holding.ticker if max_holding else None,
+            "weight": max_holding.weight if max_holding else 0,
+        },
+        "max_single_sector": {
+            "sector": max_sector[0] if max_sector else None,
+            "weight": max_sector[1]["weight"] if max_sector else 0,
+        },
+        "herfindahl_index": round(sum(h.weight ** 2 for h in holding_signals), 4),
+    }
 
 
 def aggregate_portfolio(
@@ -102,34 +144,27 @@ def aggregate_portfolio(
     Aggregate signals across a portfolio of holdings.
 
     Args:
-        holdings: Dict mapping ticker -> weight (0-1). Weights should sum to 1.0.
-                  If they don't, they'll be normalized.
+        holdings: Dict mapping ticker -> weight (0-1). Weights are normalized.
         name: Portfolio name for display.
 
     Returns:
         PortfolioSignal with aggregated metrics.
     """
     # Normalize weights
-    total_weight = sum(holdings.values())
-    if total_weight <= 0:
-        total_weight = 1.0
+    total_weight = sum(holdings.values()) or 1.0
     normalized = {t: w / total_weight for t, w in holdings.items()}
 
     holding_signals: List[HoldingSignal] = []
-    sector_scores: Dict[str, List[Tuple[float, float]]] = {}  # sector -> [(score, weight)]
+    sector_scores: Dict[str, List[Tuple[float, float]]] = {}
 
     for ticker, weight in normalized.items():
         ticker = ticker.upper()
         sector = _get_ticker_sector(ticker)
 
-        sentiment = _load_latest_sentiment(ticker)
-        ensemble = _load_latest_ensemble(ticker)
+        sentiment = _load_latest_json(ticker, "sentiment")
+        ensemble = _load_latest_json(ticker, "ensemble")
 
-        hs = HoldingSignal(
-            ticker=ticker,
-            weight=round(weight, 4),
-            sector=sector,
-        )
+        hs = HoldingSignal(ticker=ticker, weight=round(weight, 4), sector=sector)
 
         if sentiment:
             overall = sentiment.get("overall", {})
@@ -144,40 +179,15 @@ def aggregate_portfolio(
 
         holding_signals.append(hs)
 
-        # Collect sector data
         if sector and hs.sentiment_score is not None:
-            if sector not in sector_scores:
-                sector_scores[sector] = []
-            sector_scores[sector].append((hs.sentiment_score, weight))
+            sector_scores.setdefault(sector, []).append((hs.sentiment_score, weight))
 
-    # Compute aggregated scores
+    # Aggregated scores
     has_data = [h for h in holding_signals if h.sentiment_score is not None]
     coverage = len(has_data) / len(holding_signals) if holding_signals else 0
 
-    # Weighted sentiment
-    if has_data:
-        weight_sum = sum(h.weight for h in has_data)
-        if weight_sum > 0:
-            weighted_sentiment = sum(
-                h.sentiment_score * h.weight for h in has_data
-            ) / weight_sum
-        else:
-            weighted_sentiment = 0.0
-    else:
-        weighted_sentiment = 0.0
-
-    # Weighted ensemble
-    has_ensemble = [h for h in holding_signals if h.ensemble_score is not None]
-    weighted_ensemble = None
-    if has_ensemble:
-        ens_weight_sum = sum(h.weight for h in has_ensemble)
-        if ens_weight_sum > 0:
-            weighted_ensemble = sum(
-                h.ensemble_score * h.weight for h in has_ensemble
-            ) / ens_weight_sum
-
-    # Portfolio signal
-    portfolio_signal = Settings.generate_signal(weighted_sentiment)
+    weighted_sentiment = _weighted_average(holding_signals, "sentiment_score") or 0.0
+    weighted_ensemble = _weighted_average(holding_signals, "ensemble_score")
 
     # Signal distribution
     signal_dist: Dict[str, int] = {}
@@ -185,41 +195,8 @@ def aggregate_portfolio(
         sig = h.sentiment_signal or "N/A"
         signal_dist[sig] = signal_dist.get(sig, 0) + 1
 
-    # Sector breakdown
-    sector_breakdown = {}
-    for sector, scores_weights in sector_scores.items():
-        weights_in_sector = sum(w for _, w in scores_weights)
-        avg_score = (
-            sum(s * w for s, w in scores_weights) / weights_in_sector
-            if weights_in_sector > 0
-            else 0
-        )
-        sector_breakdown[sector] = {
-            "avg_score": round(avg_score, 4),
-            "signal": Settings.generate_signal(avg_score),
-            "weight": round(weights_in_sector, 4),
-            "count": len(scores_weights),
-        }
-
-    # Risk concentration: largest single-ticker and single-sector exposure
-    max_holding = max(holding_signals, key=lambda h: h.weight) if holding_signals else None
-    max_sector = max(
-        sector_breakdown.items(), key=lambda x: x[1]["weight"]
-    ) if sector_breakdown else None
-
-    risk_concentration = {
-        "max_single_holding": {
-            "ticker": max_holding.ticker if max_holding else None,
-            "weight": max_holding.weight if max_holding else 0,
-        },
-        "max_single_sector": {
-            "sector": max_sector[0] if max_sector else None,
-            "weight": max_sector[1]["weight"] if max_sector else 0,
-        },
-        "herfindahl_index": round(
-            sum(h.weight ** 2 for h in holding_signals), 4
-        ),
-    }
+    sector_breakdown = _build_sector_breakdown(sector_scores)
+    risk_concentration = _build_risk_concentration(holding_signals, sector_breakdown)
 
     return PortfolioSignal(
         name=name,
@@ -228,7 +205,7 @@ def aggregate_portfolio(
         coverage_pct=round(coverage * 100, 1),
         weighted_sentiment=round(weighted_sentiment, 4),
         weighted_ensemble=round(weighted_ensemble, 4) if weighted_ensemble is not None else None,
-        portfolio_signal=portfolio_signal,
+        portfolio_signal=Settings.generate_signal(weighted_sentiment),
         sector_breakdown=sector_breakdown,
         signal_distribution=signal_dist,
         risk_concentration=risk_concentration,
@@ -240,21 +217,16 @@ def equal_weight_portfolio(
     tickers: List[str],
     name: str = "Equal Weight",
 ) -> PortfolioSignal:
-    """
-    Convenience: create an equal-weighted portfolio from a list of tickers.
-    """
+    """Create an equal-weighted portfolio from a list of tickers."""
     weight = 1.0 / len(tickers) if tickers else 0
-    holdings = {t: weight for t in tickers}
-    return aggregate_portfolio(holdings, name=name)
+    return aggregate_portfolio({t: weight for t in tickers}, name=name)
 
 
 def sector_portfolio(
     sector: str,
     name: str = None,
 ) -> PortfolioSignal:
-    """
-    Create a portfolio from all tickers in a given sector.
-    """
+    """Create a portfolio from all tickers in a given sector."""
     tickers = Settings.SECTOR_TICKERS.get(sector, [])
     if not tickers:
         logger.warning(f"Unknown sector: {sector}")
@@ -286,7 +258,6 @@ def multi_portfolio_comparison(
             "sector_breakdown": result.sector_breakdown,
         }
 
-    # Rank portfolios by sentiment
     ranked = sorted(results.items(), key=lambda x: x[1]["sentiment"], reverse=True)
 
     return {

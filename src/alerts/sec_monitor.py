@@ -1,29 +1,22 @@
 """
 SEC Filing Alert Monitor
 -------------------------
-Monitors SEC EDGAR RSS feeds for new 10-K filings from watched tickers.
+Monitors SEC EDGAR for new 10-K filings from watched tickers.
 Supports polling mode, callback notifications, and state persistence.
 """
 
 import json
 import logging
 import time
-import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Callable, Dict, List, Optional
 from urllib.request import Request, urlopen
-from urllib.error import URLError
 
 from src.config.settings import Settings
 
 logger = logging.getLogger(__name__)
-
-SEC_RSS_URL = "https://efts.sec.gov/LATEST/search-index?q=%2210-K%22&dateRange=custom&startdt={start}&enddt={end}&forms=10-K"
-SEC_FULL_TEXT_SEARCH = "https://efts.sec.gov/LATEST/search-index?q=%2210-K%22&forms=10-K&dateRange=custom&startdt={start}&enddt={end}"
-SEC_EDGAR_FEED = "https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK={cik}&type=10-K&dateb=&owner=include&count=5&search_text=&action=getcompany&output=atom"
-SEC_EFTS_API = "https://efts.sec.gov/LATEST/search-index?q=%2210-K%22&forms=10-K"
 
 
 @dataclass
@@ -45,7 +38,7 @@ class SECMonitor:
     Monitors SEC EDGAR for new 10-K filings from watched tickers.
 
     Supports:
-    - Polling SEC EDGAR full-text search API
+    - Polling SEC EDGAR submissions API
     - Ticker watchlist filtering
     - Callback notifications for new filings
     - State persistence to avoid duplicate alerts
@@ -77,7 +70,7 @@ class SECMonitor:
                 self._seen = data.get("seen", {})
                 self._cik_map = data.get("cik_map", {})
                 logger.info(f"Loaded alert state: {len(self._seen)} seen filings")
-            except Exception as e:
+            except (json.JSONDecodeError, OSError) as e:
                 logger.warning(f"Failed to load alert state: {e}")
 
     def _save_state(self):
@@ -90,12 +83,21 @@ class SECMonitor:
                 "last_updated": datetime.now().isoformat(),
             }
             self.state_file.write_text(json.dumps(data, indent=2), encoding="utf-8")
-        except Exception as e:
+        except OSError as e:
             logger.warning(f"Failed to save alert state: {e}")
 
     # ------------------------------------------------------------------
     # CIK resolution
     # ------------------------------------------------------------------
+
+    def _sec_request(self, url: str) -> Dict:
+        """Make an authenticated request to SEC EDGAR. Returns parsed JSON."""
+        req = Request(url, headers={
+            "User-Agent": f"AlphaExtract {Settings.SEC_USER_EMAIL}",
+            "Accept": "application/json",
+        })
+        resp = urlopen(req, timeout=Settings.SEC_REQUEST_TIMEOUT)
+        return json.loads(resp.read().decode("utf-8"))
 
     def _resolve_cik(self, ticker: str) -> Optional[str]:
         """Resolve ticker to CIK number via SEC EDGAR."""
@@ -103,13 +105,16 @@ class SECMonitor:
         if ticker in self._cik_map:
             return self._cik_map[ticker]
 
-        try:
-            url = Settings.SEC_TICKERS_URL
-            req = Request(url, headers={"User-Agent": f"AlphaExtract {Settings.SEC_USER_EMAIL}"})
-            resp = urlopen(req, timeout=Settings.SEC_REQUEST_TIMEOUT)
-            data = json.loads(resp.read().decode("utf-8"))
+        cik = self._try_exchange_tickers(ticker) or self._try_fallback_tickers(ticker)
+        if cik:
+            self._cik_map[ticker] = cik
+            self._save_state()
+        return cik
 
-            # SEC returns {fields: [...], data: [[...], ...]}
+    def _try_exchange_tickers(self, ticker: str) -> Optional[str]:
+        """Try primary SEC tickers file (exchange-based)."""
+        try:
+            data = self._sec_request(Settings.SEC_TICKERS_URL)
             fields = data.get("fields", [])
             rows = data.get("data", [])
 
@@ -119,80 +124,35 @@ class SECMonitor:
             if ticker_idx is not None and cik_idx is not None:
                 for row in rows:
                     if row[ticker_idx] == ticker:
-                        cik = str(row[cik_idx]).zfill(10)
-                        self._cik_map[ticker] = cik
-                        self._save_state()
-                        return cik
-        except Exception as e:
+                        return str(row[cik_idx]).zfill(10)
+        except (OSError, json.JSONDecodeError, ValueError, KeyError) as e:
             logger.warning(f"CIK resolution failed for {ticker}: {e}")
+        return None
 
-        # Fallback: try the simpler tickers file
+    def _try_fallback_tickers(self, ticker: str) -> Optional[str]:
+        """Try fallback SEC tickers file."""
         try:
-            url = Settings.SEC_TICKERS_FALLBACK_URL
-            req = Request(url, headers={"User-Agent": f"AlphaExtract {Settings.SEC_USER_EMAIL}"})
-            resp = urlopen(req, timeout=Settings.SEC_REQUEST_TIMEOUT)
-            data = json.loads(resp.read().decode("utf-8"))
-
+            data = self._sec_request(Settings.SEC_TICKERS_FALLBACK_URL)
             for entry in data.values():
                 if entry.get("ticker") == ticker:
-                    cik = str(entry["cik_str"]).zfill(10)
-                    self._cik_map[ticker] = cik
-                    self._save_state()
-                    return cik
-        except Exception as e:
+                    return str(entry["cik_str"]).zfill(10)
+        except (OSError, json.JSONDecodeError, ValueError, KeyError) as e:
             logger.warning(f"CIK fallback resolution failed for {ticker}: {e}")
-
         return None
 
     # ------------------------------------------------------------------
-    # SEC EDGAR EFTS search
+    # SEC EDGAR submissions API
     # ------------------------------------------------------------------
 
-    def _fetch_recent_filings(self, days_back: int = 7) -> List[Dict]:
-        """
-        Query SEC EDGAR full-text search for recent 10-K filings.
-        Returns list of filing metadata dicts.
-        """
-        end_date = datetime.now().strftime("%Y-%m-%d")
-        start_date = (datetime.now() - timedelta(days=days_back)).strftime("%Y-%m-%d")
-
-        url = (
-            f"https://efts.sec.gov/LATEST/search-index?"
-            f"q=%2210-K%22&forms=10-K"
-            f"&dateRange=custom&startdt={start_date}&enddt={end_date}"
-        )
-
-        try:
-            req = Request(url, headers={
-                "User-Agent": f"AlphaExtract {Settings.SEC_USER_EMAIL}",
-                "Accept": "application/json",
-            })
-            resp = urlopen(req, timeout=Settings.SEC_REQUEST_TIMEOUT)
-            data = json.loads(resp.read().decode("utf-8"))
-            return data.get("hits", {}).get("hits", [])
-        except Exception as e:
-            logger.warning(f"EFTS search failed: {e}")
-            return []
-
     def _fetch_company_filings(self, ticker: str, days_back: int = 30) -> List[Dict]:
-        """
-        Check for recent 10-K filings for a specific company via SEC submissions API.
-        More reliable than full-text search for individual tickers.
-        """
+        """Check for recent 10-K filings for a specific company via SEC submissions API."""
         cik = self._resolve_cik(ticker)
         if not cik:
             logger.warning(f"Cannot resolve CIK for {ticker}")
             return []
 
-        url = f"https://data.sec.gov/submissions/CIK{cik}.json"
-
         try:
-            req = Request(url, headers={
-                "User-Agent": f"AlphaExtract {Settings.SEC_USER_EMAIL}",
-                "Accept": "application/json",
-            })
-            resp = urlopen(req, timeout=Settings.SEC_REQUEST_TIMEOUT)
-            data = json.loads(resp.read().decode("utf-8"))
+            data = self._sec_request(f"https://data.sec.gov/submissions/CIK{cik}.json")
 
             company_name = data.get("name", ticker)
             recent = data.get("filings", {}).get("recent", {})
@@ -222,7 +182,7 @@ class SECMonitor:
 
             return filings
 
-        except Exception as e:
+        except (OSError, json.JSONDecodeError, KeyError) as e:
             logger.warning(f"Failed to fetch filings for {ticker}: {e}")
             return []
 
@@ -285,7 +245,6 @@ class SECMonitor:
         new_alerts = []
 
         for ticker in self.watchlist:
-            # Rate limit: SEC asks for max 10 req/sec
             time.sleep(Settings.SEC_RATE_LIMIT_DELAY)
 
             filings = self._fetch_company_filings(ticker, days_back=days_back)
