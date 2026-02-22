@@ -1,64 +1,32 @@
 {
   "ticker": "AAPL",
+  "analysis_date": "2026-02-15T23:44:20.711073",
   "current_filing_date": "2025-10-31",
   "compared_to": "2024-11-01",
   "num_historical_filings": 4,
-  "total_anomalies": 3,
+  "total_anomalies": 1,
   "anomalies_by_severity": {
-    "high": 2,
-    "medium": 1,
+    "high": 1,
+    "medium": 0,
     "low": 0
   },
   "anomalies": [
     {
-      "type": "new_keyword",
-      "category": "Trade Policy",
+      "type": "keyword_spike",
+      "category": "Strategic",
+      "title": "Surge in ai technology mentions",
+      "description": "10 mentions vs. avg 1.8 (5.7x increase)",
       "severity": "high",
-      "severity_reason": "First-time mention indicates new area of focus or concern",
-      "title": "NEW: Tariff",
-      "description": "First mention of 'tariff' (2 occurrences)",
-      "explanation": "Tariff mentions indicate exposure to trade policy changes, which can impact margins and supply chain costs.",
-      "keyword": "tariff",
-      "count": 2,
-      "context": [
-        "Restrictions on international trade, such as tariffs and other controls on imports or exports of goods, technology or data, can materially adversely affect the Company's business and supply chain.",
-        "Beginning in the second quarter of 2025, new tariffs were announced on imports to the U.S."
-      ]
-    },
-    {
-      "type": "frequency_increase",
-      "category": "Technology",
-      "severity": "high",
-      "severity_reason": "5.7x increase suggests major new focus area",
-      "title": "Ai - Frequency Spike",
-      "description": "'ai' mentioned 5.7x more (10 vs 2 previously)",
-      "explanation": "AI mentions reflect competitive positioning in technology, R&D investment priorities, or disruption concerns.",
-      "keyword": "ai",
+      "severity_reason": "5.7x increase exceeds 3.0x threshold",
       "current_count": 10,
-      "average_count": 1.8,
-      "ratio": 5.7,
+      "average_count": 1.75,
+      "ratio": 5.714285714285714,
       "context": [
-        "The risks and uncertainties described below are not exhaustive and should not be considered a complete statement of all potential risks or uncertainties that the Company faces or may face in the future.",
-        "In addition, the Company's global supply chain is large and complex and a majority of the Company's supplier facilities, including manufacturing and assembly sites, are located outside the U.S."
-      ]
-    },
-    {
-      "type": "frequency_increase",
-      "category": "Financial Risk",
-      "severity": "medium",
-      "severity_reason": "3.5x increase indicates growing importance",
-      "title": "Interest Rate - Frequency Spike",
-      "description": "'interest rate' mentioned 3.5x more (7 vs 2 previously)",
-      "explanation": "Interest rate discussion signals exposure to financing costs, debt refinancing risks, or capital allocation challenges.",
-      "keyword": "interest_rate",
-      "current_count": 7,
-      "average_count": 2.0,
-      "ratio": 3.5,
-      "context": [
-        "Adverse macroeconomic conditions, including slow growth or recession, high unemployment, inflation, tighter credit, higher interest rates, and currency fluctuations, can adversely impact consumer confidence and spending and materially adversely affect demand for the Company's products and services.",
-        "In addition, consumer confidence and spending can be materially adversely affected in response to changes in fiscal and monetary policy, financial market volatility, declines in income or asset values, and other economic factors."
-      ]
+        "the introduction of new and complex technologies, such as artificial intelligence features, can increase these and other safety risks, including exposing users to harmful, inaccurate or other negative content and experiences.",
+        "this risk may be exacerbated by the use of new and emerging technologies, including machine learning and artificial intelligence, which can involve, among other things, the acquisition and use of copyrighted materials for training as well as the potential reproduction of copyrighted materials in their outputs .",
+        "these risks, and the risks of novel claims being attempted, may be exacerbated as new and emerging technologies, including machine learning and artificial intelligence, are further integrated into the company's products and services."
+      ],
+      "explanation": "LLM analysis unavailable."
     }
-  ],
-  "analysis_date": "2026-01-27T13:19:30.997100"
+  ]
 }
