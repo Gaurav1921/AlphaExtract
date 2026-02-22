@@ -42,4 +42,3 @@ pytest-cov==4.1.0
 
 # Utilities
 tqdm==4.66.1
-uvicorn==0.41.0

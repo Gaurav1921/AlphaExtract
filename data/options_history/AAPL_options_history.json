@@ -1,0 +1,19 @@
+{
+  "ticker": "AAPL",
+  "last_updated": "2026-02-23T05:23:30.619807",
+  "entries": [
+    {
+      "ticker": "AAPL",
+      "date": "2026-02-23",
+      "put_call_ratio": 0.5349,
+      "put_call_volume_ratio": 0.5026,
+      "avg_call_iv": 0.6349,
+      "avg_put_iv": 0.6526,
+      "iv_skew": 0.0177,
+      "options_score": 0.2333,
+      "options_signal": "BUY",
+      "total_call_oi": 156416,
+      "total_put_oi": 83666
+    }
+  ]
+}
