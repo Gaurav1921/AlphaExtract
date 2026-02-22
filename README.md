@@ -39,13 +39,13 @@ AlphaExtract is an end-to-end quantitative analysis pipeline that:
 SEC EDGAR API --> Downloader --> Parser --> Splitter --> Sentiment (FinBERT)
                       |                                       |
                   Filing Alerts                         Ensemble Scoring
-                  (RSS Monitor)                       (FinBERT + Keywords + LLM)
-                                                            |
-                                    +-------+-------+-------+-------+-------+
-                                    |       |       |       |       |       |
-                                Backtest  RAG    Anomaly  Portfolio Options Dashboard
-                                    |     Chat   Detect.  Signals  Overlay  (11 pages)
-                                Calibrate
+                  (SEC Monitor +                      (FinBERT + Keywords + LLM)
+                   Webhooks)                                  |
+                                    +-------+-------+-------+-------+-------+-------+
+                                    |       |       |       |       |       |       |
+                                Backtest  RAG    Anomaly  Portfolio Options  API   Dashboard
+                                    |     Chat   Detect.  Signals  History       (11 pages)
+                                Calibrate                  Overlay
 ```
 
 ### Tech Stack
@@ -58,9 +58,10 @@ SEC EDGAR API --> Downloader --> Parser --> Splitter --> Sentiment (FinBERT)
 | RAG Chatbot | Local vector search (sentence-transformers + numpy) |
 | LLM Providers | Groq (free) / Gemini / Ollama (local) |
 | Market Data | yfinance |
-| Options Data | yfinance options chains |
-| Filing Alerts | SEC EDGAR submissions API |
-| Portfolio | Position-weighted signal aggregation |
+| Options Data | yfinance options chains + historical tracking |
+| Filing Alerts | SEC EDGAR submissions API + webhook notifications |
+| Portfolio | Position-weighted signal aggregation + custom weight editor |
+| REST API | FastAPI + Pydantic |
 | Dashboard | Streamlit + Plotly |
 | Database | Supabase (optional) |
 
@@ -137,12 +138,22 @@ python main.py alerts AAPL MSFT GOOGL --days 30
 # Continuous monitoring (polls every hour)
 python main.py alerts AAPL MSFT --poll --interval 3600
 
+# Alerts with webhook notifications (Slack/custom)
+python main.py alerts AAPL MSFT --poll --webhook-url https://hooks.slack.com/... --webhook-format slack
+
 # Portfolio signal aggregation
 python main.py portfolio AAPL MSFT GOOGL JPM XOM --save
 python main.py portfolio --sector Technology
 
 # Options sentiment overlay
 python main.py options AAPL MSFT --save
+
+# Track options data over time
+python main.py options-history AAPL MSFT --record
+python main.py options-history AAPL --limit 30
+
+# Launch REST API
+python main.py api --port 8000
 ```
 
 ### Dashboard
@@ -229,7 +240,25 @@ The dashboard includes 11 pages:
 - Composite signal blending filing + options sentiment
 - Configurable weighting (default: 70% filing / 30% options)
 - Agreement detection between filing and options signals
+- **Historical tracking**: Store snapshots over time, trend analysis
 - CLI: `python main.py options AAPL MSFT --save`
+- CLI: `python main.py options-history AAPL --record`
+
+### REST API (FastAPI)
+
+- Programmatic access to all signals via HTTP
+- Endpoints: `/sentiment/{ticker}`, `/ensemble/{ticker}`, `/portfolio`, `/options/{ticker}`, `/alerts/{ticker}`, `/signals/{ticker}`
+- Health check and ticker listing
+- Pydantic request/response validation
+- CLI: `python main.py api --port 8000`
+
+### Webhook Notifications
+
+- HTTP POST notifications when new 10-K filings are detected
+- Slack-formatted messages (incoming webhooks)
+- Generic JSON POST for custom endpoints
+- Multiple webhook endpoints supported
+- CLI: `python main.py alerts AAPL MSFT --poll --webhook-url https://...`
 
 ### Sector Coverage (80 Tickers, 8 Sectors)
 
@@ -272,13 +301,17 @@ AlphaExtract/
 │   │   ├── ensemble.py              # 3-signal ensemble scoring
 │   │   └── anomaly.py               # Anomaly detection
 │   ├── alerts/
-│   │   └── sec_monitor.py           # SEC EDGAR filing alert monitor
+│   │   ├── sec_monitor.py           # SEC EDGAR filing alert monitor
+│   │   └── webhook.py               # Webhook notifications (Slack/JSON)
 │   ├── analysis/
 │   │   ├── comparison.py            # Multi-quarter comparison
 │   │   └── portfolio.py             # Portfolio signal aggregation
+│   ├── api/
+│   │   └── app.py                   # FastAPI REST API
 │   ├── market/
 │   │   ├── price_data.py            # Yahoo Finance market data
-│   │   └── options_overlay.py       # Options sentiment overlay
+│   │   ├── options_overlay.py       # Options sentiment overlay
+│   │   └── options_history.py       # Historical options tracking
 │   ├── backtesting/
 │   │   ├── backtester.py            # Backtest engine
 │   │   ├── calibrator.py            # Parameter calibration
@@ -302,7 +335,10 @@ AlphaExtract/
 │   ├── test_comparison.py
 │   ├── test_sec_monitor.py
 │   ├── test_portfolio.py
-│   └── test_options_overlay.py
+│   ├── test_options_overlay.py
+│   ├── test_options_history.py
+│   ├── test_webhook.py
+│   └── test_api.py
 └── data/
     ├── raw/                         # Downloaded 10-K HTML
     ├── processed/                   # Parsed markdown + tables
@@ -311,6 +347,7 @@ AlphaExtract/
     ├── anomalies/                   # Anomaly reports
     ├── backtest/                    # Backtest results
     ├── market/                      # Cached price data + options
+    ├── options_history/             # Historical options tracking
     └── portfolios/                  # Portfolio analysis results
 ```
 
@@ -352,12 +389,10 @@ pytest tests/test_ensemble.py -v
 - [x] Options sentiment overlay
 - [x] Streamlit dashboard v3.0 (11 pages)
 
-### Planned
-
-- [ ] API endpoint (FastAPI)
-- [ ] Webhook notifications for filing alerts
-- [ ] Custom portfolio weight editor in dashboard
-- [ ] Historical options data tracking
+- [x] REST API endpoint (FastAPI)
+- [x] Webhook notifications for filing alerts (Slack/JSON)
+- [x] Custom portfolio weight editor in dashboard
+- [x] Historical options data tracking
 
 ---
 

@@ -15,6 +15,7 @@ from typing import Callable, Dict, List, Optional
 from urllib.request import Request, urlopen
 
 from src.config.settings import Settings
+from src.alerts.webhook import WebhookNotifier
 
 logger = logging.getLogger(__name__)
 
@@ -49,10 +50,12 @@ class SECMonitor:
         watchlist: List[str] = None,
         state_file: Path = None,
         poll_interval: int = 3600,
+        webhook_notifier: WebhookNotifier = None,
     ):
         self.watchlist = [t.upper() for t in (watchlist or [])]
         self.state_file = state_file or Settings.ALERT_STATE_FILE
         self.poll_interval = poll_interval  # seconds between polls
+        self.webhook_notifier = webhook_notifier
         self._callbacks: List[Callable[[FilingAlert], None]] = []
         self._seen: Dict[str, str] = {}  # accession_number -> detected_at
         self._cik_map: Dict[str, str] = {}  # ticker -> CIK
@@ -195,12 +198,15 @@ class SECMonitor:
         self._callbacks.append(callback)
 
     def _notify(self, alert: FilingAlert):
-        """Fire all registered callbacks."""
+        """Fire all registered callbacks and webhooks."""
         for cb in self._callbacks:
             try:
                 cb(alert)
             except Exception as e:
                 logger.error(f"Alert callback failed: {e}")
+
+        if self.webhook_notifier:
+            self.webhook_notifier.notify(alert)
 
     # ------------------------------------------------------------------
     # Watchlist management

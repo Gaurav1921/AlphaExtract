@@ -14,6 +14,8 @@ Usage:
     python main.py alerts AAPL MSFT --days 30
     python main.py portfolio AAPL MSFT GOOGL
     python main.py options AAPL MSFT
+    python main.py options-history AAPL --record
+    python main.py api --port 8000
 """
 
 import sys
@@ -240,9 +242,26 @@ def pipeline_command(args):
 def alerts_command(args):
     """Monitor SEC EDGAR for new 10-K filings."""
     from src.alerts.sec_monitor import SECMonitor
+    from src.alerts.webhook import WebhookNotifier
 
     tickers = [t.upper() for t in args.tickers]
-    monitor = SECMonitor(watchlist=tickers, poll_interval=args.interval)
+
+    # Set up webhook if URL provided
+    webhook_notifier = None
+    if args.webhook_url:
+        webhook_notifier = WebhookNotifier()
+        webhook_notifier.add_webhook(
+            url=args.webhook_url,
+            name=args.webhook_name,
+            format=args.webhook_format,
+        )
+        logger.info(f"Webhook configured: {args.webhook_name} ({args.webhook_format})")
+
+    monitor = SECMonitor(
+        watchlist=tickers,
+        poll_interval=args.interval,
+        webhook_notifier=webhook_notifier,
+    )
 
     def log_alert(alert):
         print(f"  NEW FILING: {alert.ticker} ({alert.company_name}) - {alert.filing_date}")
@@ -305,6 +324,59 @@ def portfolio_command(args):
         save_portfolio(result)
 
 
+def api_command(args):
+    """Launch the FastAPI server."""
+    try:
+        import uvicorn
+    except ImportError:
+        logger.error("uvicorn not installed — run: pip install uvicorn")
+        return
+
+    logger.info(f"Starting AlphaExtract API on {args.host}:{args.port}")
+    uvicorn.run(
+        "src.api.app:app",
+        host=args.host,
+        port=args.port,
+        reload=args.reload,
+    )
+
+
+def options_history_command(args):
+    """Track historical options data over time."""
+    from src.market.options_history import OptionsHistoryTracker
+
+    tracker = OptionsHistoryTracker()
+    tickers = [t.upper() for t in args.tickers]
+
+    if args.record:
+        logger.info(f"Recording options snapshots for {', '.join(tickers)}")
+        entries = tracker.batch_fetch_and_record(tickers)
+        logger.info(f"Recorded {len(entries)} snapshot(s)")
+        for entry in entries:
+            print(f"  {entry.ticker}: P/C={entry.put_call_ratio}, IV skew={entry.iv_skew}, score={entry.options_score}")
+    else:
+        for ticker in tickers:
+            ts = tracker.get_history(ticker, limit=args.limit)
+
+            print(f"\n{'=' * 60}")
+            print(f"  OPTIONS HISTORY: {ticker}")
+            print(f"{'=' * 60}")
+            print(f"  Data Points: {ts.data_points}")
+
+            if ts.date_range:
+                print(f"  Range: {ts.date_range['first']} to {ts.date_range['last']}")
+
+            if ts.trend:
+                pc = ts.trend.get("put_call_ratio", {})
+                iv = ts.trend.get("iv_skew", {})
+                if pc:
+                    print(f"  P/C Ratio: {pc.get('current', 'N/A')} (trend: {pc.get('direction', 'N/A')}, avg: {pc.get('avg', 'N/A')})")
+                if iv:
+                    print(f"  IV Skew:   {iv.get('current', 'N/A')} (trend: {iv.get('direction', 'N/A')}, avg: {iv.get('avg', 'N/A')})")
+            elif ts.data_points == 0:
+                print(f"  No data. Use --record to fetch and store snapshots.")
+
+
 def options_command(args):
     """Fetch options data and compute composite signals."""
     from src.market.options_overlay import OptionsOverlay
@@ -354,8 +426,11 @@ Examples:
   python main.py pipeline AAPL --years 3
   python main.py dashboard --port 8501
   python main.py alerts AAPL MSFT --days 30
+  python main.py alerts AAPL MSFT --poll --webhook-url https://hooks.slack.com/...
   python main.py portfolio AAPL MSFT GOOGL --save
   python main.py options AAPL MSFT --save
+  python main.py options-history AAPL MSFT --record
+  python main.py api --port 8000
         """,
     )
     parser.add_argument("--log-level", default="INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR"])
@@ -432,6 +507,9 @@ Examples:
     al.add_argument("--days", type=int, default=30, help="Look back N days (default 30)")
     al.add_argument("--poll", action="store_true", help="Continuously poll (default: check once)")
     al.add_argument("--interval", type=int, default=3600, help="Poll interval in seconds (default 3600)")
+    al.add_argument("--webhook-url", default=None, help="Webhook URL for notifications")
+    al.add_argument("--webhook-name", default="cli-webhook", help="Webhook name (default: cli-webhook)")
+    al.add_argument("--webhook-format", default="json", choices=["json", "slack"], help="Webhook payload format")
     al.set_defaults(func=alerts_command)
 
     # portfolio
@@ -449,6 +527,20 @@ Examples:
     op.add_argument("--options-weight", type=float, default=0.30, help="Options signal weight (default 0.30)")
     op.add_argument("--save", action="store_true", help="Save results to JSON")
     op.set_defaults(func=options_command)
+
+    # options-history
+    oh = subparsers.add_parser("options-history", help="Track options data over time")
+    oh.add_argument("tickers", nargs="+", help="Stock tickers")
+    oh.add_argument("--record", action="store_true", help="Fetch and record current snapshot")
+    oh.add_argument("--limit", type=int, default=0, help="Max history entries to show (0=all)")
+    oh.set_defaults(func=options_history_command)
+
+    # api
+    api = subparsers.add_parser("api", help="Launch the FastAPI REST API server")
+    api.add_argument("--host", default=Settings.API_HOST, help="Host to bind (default 0.0.0.0)")
+    api.add_argument("--port", type=int, default=Settings.API_PORT, help="Port number (default 8000)")
+    api.add_argument("--reload", action="store_true", help="Auto-reload on code changes (dev mode)")
+    api.set_defaults(func=api_command)
 
     args = parser.parse_args()
 

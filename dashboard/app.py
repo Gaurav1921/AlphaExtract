@@ -1,5 +1,5 @@
 """
-AlphaExtract Dashboard - v2.0.0
+AlphaExtract Dashboard - v4.0.0
 ================================
 Full-featured Streamlit dashboard with:
 - Sentiment overview & signal cards
@@ -102,6 +102,17 @@ try:
     from src.market.options_overlay import OptionsOverlay
 except Exception:
     OptionsOverlay = None
+
+try:
+    from src.market.options_history import OptionsHistoryTracker
+except Exception:
+    OptionsHistoryTracker = None
+
+try:
+    from src.alerts.webhook import WebhookNotifier, WebhookConfig
+except Exception:
+    WebhookNotifier = None
+    WebhookConfig = None
 
 
 # ============================================================================
@@ -1300,9 +1311,14 @@ elif page == "Portfolio":
 
         # Portfolio builder
         st.markdown("#### Build Portfolio")
-        mode = st.radio("Mode", ["Custom Tickers", "Sector Portfolio"], horizontal=True, key="portfolio_mode")
+        mode = st.radio(
+            "Mode",
+            ["Custom Weights", "Equal Weight", "Sector Portfolio"],
+            horizontal=True,
+            key="portfolio_mode",
+        )
 
-        if mode == "Custom Tickers":
+        if mode in ("Custom Weights", "Equal Weight"):
             all_tickers = Settings.ALL_TICKERS if Settings and hasattr(Settings, "ALL_TICKERS") else []
             selected = st.multiselect(
                 "Select tickers",
@@ -1312,9 +1328,41 @@ elif page == "Portfolio":
             )
             portfolio_name = st.text_input("Portfolio Name", value="My Portfolio", key="portfolio_name")
 
+            # Custom weight sliders per holding
+            custom_weights = {}
+            if mode == "Custom Weights" and selected:
+                st.markdown("#### Set Weights per Holding")
+                st.caption("Adjust sliders to set relative weight for each holding. Weights are auto-normalized.")
+                cols_per_row = 3
+                for i in range(0, len(selected), cols_per_row):
+                    row_tickers = selected[i:i + cols_per_row]
+                    cols = st.columns(len(row_tickers))
+                    for col, ticker in zip(cols, row_tickers):
+                        with col:
+                            w = st.slider(
+                                ticker,
+                                min_value=0.0,
+                                max_value=100.0,
+                                value=round(100.0 / len(selected), 1),
+                                step=0.5,
+                                key=f"pw_{ticker}",
+                            )
+                            custom_weights[ticker] = w
+
+                # Show normalized weights summary
+                total = sum(custom_weights.values()) or 1
+                st.markdown("**Normalized weights:**")
+                weight_summary = ", ".join(
+                    f"{t}: {w / total:.1%}" for t, w in custom_weights.items()
+                )
+                st.caption(weight_summary)
+
             if st.button("Analyze Portfolio", type="primary") and selected:
                 with st.spinner("Aggregating signals..."):
-                    result = equal_weight_portfolio(selected, name=portfolio_name)
+                    if mode == "Custom Weights" and custom_weights:
+                        result = aggregate_portfolio(custom_weights, name=portfolio_name)
+                    else:
+                        result = equal_weight_portfolio(selected, name=portfolio_name)
 
                 # Summary metrics
                 col1, col2, col3, col4 = st.columns(4)
@@ -1323,7 +1371,6 @@ elif page == "Portfolio":
                 with col2:
                     st.metric("Coverage", f"{result.coverage_pct}%")
                 with col3:
-                    color = SIGNAL_COLORS.get(result.portfolio_signal, "#9E9E9E")
                     st.metric("Signal", result.portfolio_signal)
                 with col4:
                     st.metric("Sentiment", f"{result.weighted_sentiment:+.4f}")
@@ -1346,17 +1393,27 @@ elif page == "Portfolio":
                     })
                 st.dataframe(pd.DataFrame(holdings_data), width="stretch", hide_index=True)
 
+                # Weight distribution pie chart
+                st.markdown("#### Weight Distribution")
+                fig = go.Figure(data=[go.Pie(
+                    labels=[h["ticker"] for h in result.holdings],
+                    values=[h["weight"] for h in result.holdings],
+                    textinfo="label+percent",
+                    hole=0.3,
+                )])
+                fig.update_layout(height=400)
+                st.plotly_chart(fig, width="stretch")
+
                 # Sector breakdown
                 if result.sector_breakdown:
                     st.markdown("#### Sector Breakdown")
                     sector_names = list(result.sector_breakdown.keys())
-                    sector_scores = [result.sector_breakdown[s]["avg_score"] for s in sector_names]
-                    sector_weights = [result.sector_breakdown[s]["weight"] for s in sector_names]
+                    sector_scores_list = [result.sector_breakdown[s]["avg_score"] for s in sector_names]
 
                     fig = go.Figure(data=[go.Bar(
-                        x=sector_names, y=sector_scores,
-                        marker_color=["#3b82f6" if s >= 0 else "#ef4444" for s in sector_scores],
-                        text=[f"{s:+.3f}" for s in sector_scores],
+                        x=sector_names, y=sector_scores_list,
+                        marker_color=["#3b82f6" if s >= 0 else "#ef4444" for s in sector_scores_list],
+                        text=[f"{s:+.3f}" for s in sector_scores_list],
                         textposition="outside",
                     )])
                     fig.update_layout(yaxis_title="Avg Sentiment", yaxis_range=[-1, 1], height=400)
@@ -1488,6 +1545,92 @@ elif page == "Options Overlay":
                               margin=dict(l=20, r=20, t=20, b=20))
             st.plotly_chart(fig, width="stretch")
 
+        # Historical options tracking section
+        st.markdown("---")
+        st.markdown("#### Historical Options Tracking")
+
+        if OptionsHistoryTracker is None:
+            st.info("Historical options tracking module not available.")
+        else:
+            tracker = OptionsHistoryTracker()
+            ts = tracker.get_history(ticker_input)
+
+            if ts.data_points == 0:
+                st.info(f"No historical options data for {ticker_input}. "
+                        "Use the CLI to record snapshots: `python main.py options-history AAPL --record`")
+            else:
+                st.success(f"Found {ts.data_points} data point(s) for {ticker_input}")
+
+                # Trend summary
+                if ts.trend:
+                    tcol1, tcol2, tcol3 = st.columns(3)
+                    pc_trend = ts.trend.get("put_call_ratio", {})
+                    iv_trend = ts.trend.get("iv_skew", {})
+                    score_trend = ts.trend.get("options_score", {})
+
+                    with tcol1:
+                        direction = pc_trend.get("direction", "N/A")
+                        delta = pc_trend.get("change", 0)
+                        st.metric("P/C Ratio Trend", direction.title(),
+                                  delta=f"{delta:+.4f}" if delta else None)
+                    with tcol2:
+                        direction = iv_trend.get("direction", "N/A")
+                        delta = iv_trend.get("change", 0)
+                        st.metric("IV Skew Trend", direction.title(),
+                                  delta=f"{delta:+.4f}" if delta else None)
+                    with tcol3:
+                        direction = score_trend.get("direction", "N/A")
+                        delta = score_trend.get("change", 0)
+                        st.metric("Score Trend", direction.title(),
+                                  delta=f"{delta:+.4f}" if delta else None)
+
+                # Time-series charts
+                if ts.data_points >= 2:
+                    dates = [e["date"] for e in ts.entries]
+
+                    # P/C Ratio over time
+                    pc_vals = [e.get("put_call_ratio") for e in ts.entries]
+                    if any(v is not None for v in pc_vals):
+                        st.markdown("##### Put/Call Ratio Over Time")
+                        fig = go.Figure()
+                        fig.add_trace(go.Scatter(
+                            x=dates,
+                            y=pc_vals,
+                            mode="lines+markers",
+                            line=dict(color="#3b82f6", width=2),
+                            name="P/C Ratio",
+                        ))
+                        fig.add_hline(y=1.0, line_dash="dash", line_color="gray",
+                                      annotation_text="Neutral (1.0)")
+                        fig.update_layout(yaxis_title="P/C Ratio", height=300,
+                                          margin=dict(l=20, r=20, t=20, b=20))
+                        st.plotly_chart(fig, width="stretch")
+
+                    # IV Skew over time
+                    skew_vals = [e.get("iv_skew") for e in ts.entries]
+                    if any(v is not None for v in skew_vals):
+                        st.markdown("##### IV Skew Over Time")
+                        fig = go.Figure()
+                        fig.add_trace(go.Scatter(
+                            x=dates,
+                            y=skew_vals,
+                            mode="lines+markers",
+                            line=dict(color="#f59e0b", width=2),
+                            name="IV Skew",
+                        ))
+                        fig.add_hline(y=0, line_dash="dash", line_color="gray",
+                                      annotation_text="Neutral")
+                        fig.update_layout(yaxis_title="IV Skew (Put - Call)", height=300,
+                                          margin=dict(l=20, r=20, t=20, b=20))
+                        st.plotly_chart(fig, width="stretch")
+
+                # Data table
+                with st.expander("Raw History Data"):
+                    hist_df = pd.DataFrame(ts.entries)
+                    display_cols = [c for c in ["date", "put_call_ratio", "iv_skew",
+                                                "options_score", "options_signal"] if c in hist_df.columns]
+                    st.dataframe(hist_df[display_cols], width="stretch", hide_index=True)
+
 
 # ============================================================================
 # PAGE: FILING ALERTS
@@ -1552,6 +1695,31 @@ elif page == "Filing Alerts":
                 st.metric("Seen Filings", status["seen_filings"])
             with scol3:
                 st.metric("CIK Cache", status["cik_cache_size"])
+
+        # Webhook configuration
+        st.markdown("---")
+        st.markdown("#### Webhook Notifications")
+        if WebhookNotifier is not None:
+            st.caption("Configure webhooks to receive notifications when new filings are detected.")
+            webhook_url = st.text_input("Webhook URL", placeholder="https://hooks.slack.com/services/...", key="webhook_url")
+            wh_col1, wh_col2 = st.columns(2)
+            with wh_col1:
+                webhook_name = st.text_input("Webhook Name", value="my-webhook", key="webhook_name")
+            with wh_col2:
+                webhook_format = st.selectbox("Format", ["json", "slack"], key="webhook_format")
+
+            st.caption(
+                "**JSON format:** Generic JSON POST for any endpoint. "
+                "**Slack format:** Formatted for Slack incoming webhooks."
+            )
+            st.markdown(
+                "To use webhooks with the CLI:\n\n"
+                "```bash\n"
+                "python main.py alerts AAPL MSFT --poll --webhook-url https://your-webhook-url\n"
+                "```"
+            )
+        else:
+            st.info("Webhook module not available.")
 
         st.markdown("---")
         st.markdown("#### About Filing Alerts")
@@ -1661,7 +1829,7 @@ elif page == "Data Management":
 
 st.markdown("---")
 st.markdown(
-    '<div style="text-align: center; color: #94a3b8;">AlphaExtract v3.0.0 | '
-    "Built with Streamlit, FinBERT, Ensemble Scoring, Local RAG, Portfolio & Options</div>",
+    '<div style="text-align: center; color: #94a3b8;">AlphaExtract v4.0.0 | '
+    "Built with Streamlit, FinBERT, Ensemble Scoring, Local RAG, Portfolio, Options & API</div>",
     unsafe_allow_html=True,
 )

@@ -28,6 +28,10 @@ openai>=1.12.0
 # Database
 supabase>=2.0.0
 
+# API
+fastapi>=0.104.0
+uvicorn>=0.24.0
+
 # Dashboard
 streamlit>=1.28.0
 plotly>=5.18.0
