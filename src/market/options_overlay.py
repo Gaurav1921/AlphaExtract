@@ -112,8 +112,8 @@ class OptionsOverlay:
 
     def __init__(
         self,
-        filing_weight: float = 0.70,
-        options_weight: float = 0.30,
+        filing_weight: float = Settings.OPTIONS_FILING_WEIGHT,
+        options_weight: float = Settings.OPTIONS_WEIGHT,
         cache_dir: Path = None,
     ):
         self.filing_weight = filing_weight

@@ -51,7 +51,7 @@ class SECMonitor:
         poll_interval: int = 3600,
     ):
         self.watchlist = [t.upper() for t in (watchlist or [])]
-        self.state_file = state_file or Settings.DATA_DIR / "alert_state.json"
+        self.state_file = state_file or Settings.ALERT_STATE_FILE
         self.poll_interval = poll_interval  # seconds between polls
         self._callbacks: List[Callable[[FilingAlert], None]] = []
         self._seen: Dict[str, str] = {}  # accession_number -> detected_at

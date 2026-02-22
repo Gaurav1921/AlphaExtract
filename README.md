@@ -128,9 +128,6 @@ python main.py calibrate AAPL MSFT
 # Full pipeline (download -> parse -> split -> sentiment -> ensemble)
 python main.py pipeline AAPL --years 5
 
-# Full pipeline (download -> parse -> split -> sentiment -> ensemble)
-python main.py pipeline AAPL --years 5
-
 # Launch dashboard
 python main.py dashboard
 
