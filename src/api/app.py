@@ -124,6 +124,26 @@ def _load_latest_json(ticker: str, suffix: str) -> Optional[Dict]:
 # Endpoints
 # ============================================================================
 
+@app.get("/")
+def root():
+    """Root endpoint — API overview."""
+    return {
+        "name": "AlphaExtract API",
+        "version": Settings.VERSION,
+        "docs": "/docs",
+        "endpoints": [
+            "GET  /health",
+            "GET  /tickers",
+            "GET  /sentiment/{ticker}",
+            "GET  /ensemble/{ticker}",
+            "GET  /signals/{ticker}",
+            "POST /portfolio",
+            "GET  /options/{ticker}",
+            "GET  /alerts/{ticker}",
+        ],
+    }
+
+
 @app.get("/health", response_model=HealthResponse)
 def health():
     """Health check endpoint."""
