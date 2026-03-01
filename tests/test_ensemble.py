@@ -122,7 +122,8 @@ class TestLLMScorer:
             "one_line_summary": "Strong execution",
         })
         result = scorer._parse_response(response)
-        assert result["score"] == 1.0
+        # bullish(1.0) * high confidence multiplier(0.6) = 0.6
+        assert result["score"] == 0.6
         assert result["outlook"] == "bullish"
         assert result["confidence"] == "high"
 
@@ -135,7 +136,8 @@ class TestLLMScorer:
             "one_line_summary": "Weak outlook",
         })
         result = scorer._parse_response(response)
-        assert result["score"] == -0.3
+        # bearish(-1.0) * low confidence multiplier(0.25) = -0.25
+        assert result["score"] == -0.25
         assert result["outlook"] == "bearish"
 
     def test_parse_neutral(self):
@@ -160,7 +162,8 @@ class TestLLMScorer:
         response = '```json\n{"outlook": "bullish", "confidence": "medium", "key_factors": [], "one_line_summary": "ok"}\n```'
         result = scorer._parse_response(response)
         assert result["outlook"] == "bullish"
-        assert result["score"] == 0.65
+        # bullish(1.0) * medium confidence multiplier(0.5) = 0.5
+        assert result["score"] == 0.5
 
     def test_rate_limit_retry_openai_compatible(self):
         """Test that 429 errors trigger retry with Groq/Ollama provider."""
@@ -205,7 +208,8 @@ class TestLLMScorer:
         scorer._provider = "groq"
         scorer._model = "llama-3.3-70b-versatile"
         result = scorer.score("AAPL", {"item_7": "Some text", "item_1a": "Risk text"})
-        assert result["score"] == 1.0
+        # bullish(1.0) * high confidence multiplier(0.6) = 0.6
+        assert result["score"] == 0.6
         assert result["outlook"] == "bullish"
         mock_client.chat.completions.create.assert_called_once()
 

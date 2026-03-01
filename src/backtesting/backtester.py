@@ -7,6 +7,7 @@ Runs backtest across historical filings: compares AlphaExtract signals
 
 import json
 import logging
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional, Callable
 
@@ -138,16 +139,43 @@ class Backtester:
 
         return results
 
+    @staticmethod
+    def _parse_filing_date(date_str: str) -> Optional[datetime]:
+        """Parse filing date from filename, supporting multiple formats."""
+        for fmt in ("%Y-%m-%d", "%Y%m%d"):
+            try:
+                return datetime.strptime(date_str, fmt)
+            except ValueError:
+                continue
+        return None
+
     def _backtest_finbert(self, ticker: str) -> List[Dict]:
         """Backtest using FinBERT-only sentiment signals."""
         results = []
         sentiment_files = sorted(Settings.SENTIMENT_DIR.glob(f"{ticker}_*_sentiment.json"))
+        today = datetime.now()
 
         for sf in sentiment_files:
             parts = sf.stem.split("_")
             if len(parts) < 2:
                 continue
             filing_date = parts[1]
+
+            # Validate filing date
+            filing_dt = self._parse_filing_date(filing_date)
+            if filing_dt is None:
+                logger.warning(f"Skipping {sf.name}: cannot parse date '{filing_date}'")
+                continue
+
+            # Normalize date format
+            filing_date = filing_dt.strftime("%Y-%m-%d")
+
+            # Skip filings where return window hasn't fully elapsed
+            if filing_dt + timedelta(days=self.return_window) > today:
+                logger.info(
+                    f"Skipping {sf.name}: {self.return_window}d window extends beyond today"
+                )
+                continue
 
             try:
                 data = json.loads(sf.read_text(encoding="utf-8"))
@@ -183,11 +211,28 @@ class Backtester:
             logger.warning(f"No ensemble data for {ticker} — falling back to FinBERT")
             return self._backtest_finbert(ticker)
 
+        today = datetime.now()
+
         for ef in ensemble_files:
             parts = ef.stem.split("_")
             if len(parts) < 2:
                 continue
             filing_date = parts[1]
+
+            # Validate filing date
+            filing_dt = self._parse_filing_date(filing_date)
+            if filing_dt is None:
+                logger.warning(f"Skipping {ef.name}: cannot parse date '{filing_date}'")
+                continue
+
+            filing_date = filing_dt.strftime("%Y-%m-%d")
+
+            # Skip filings where return window hasn't fully elapsed
+            if filing_dt + timedelta(days=self.return_window) > today:
+                logger.info(
+                    f"Skipping {ef.name}: {self.return_window}d window extends beyond today"
+                )
+                continue
 
             try:
                 data = json.loads(ef.read_text(encoding="utf-8"))

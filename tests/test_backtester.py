@@ -179,6 +179,35 @@ class TestBacktester:
         assert result.results[0]["ticker"] == "AAPL"
         assert result.results[0]["actual_return_pct"] == 10.5
 
+    def test_skips_recent_filings(self, tmp_data_dir, sample_sentiment_result):
+        """Filings where return window extends beyond today should be skipped."""
+        sentiment_dir = tmp_data_dir / "sentiment"
+        # Use a very recent date that is within the return window
+        (sentiment_dir / "AAPL_2026-02-15_sentiment.json").write_text(
+            json.dumps(sample_sentiment_result)
+        )
+
+        mock_market = MagicMock()
+
+        with patch("src.backtesting.backtester.Settings") as mock_s:
+            mock_s.SENTIMENT_DIR = sentiment_dir
+            mock_s.MARKET_FLAT_THRESHOLD = 0.02
+
+            backtester = Backtester(return_window=90, market_provider=mock_market)
+            result = backtester.run(["AAPL"], mode="finbert")
+
+        # Should skip the recent filing
+        assert len(result.results) == 0
+        mock_market.get_filing_outcome.assert_not_called()
+
+    def test_parse_filing_date_formats(self):
+        """Should handle both YYYY-MM-DD and YYYYMMDD formats."""
+        from datetime import datetime
+        bt = Backtester()
+        assert bt._parse_filing_date("2024-01-15") == datetime(2024, 1, 15)
+        assert bt._parse_filing_date("20240115") == datetime(2024, 1, 15)
+        assert bt._parse_filing_date("invalid") is None
+
     def test_save_results(self, tmp_path, sample_results):
         result = BacktestResult(sample_results, {"mode": "test"})
 

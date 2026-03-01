@@ -17,6 +17,9 @@ from src.config.settings import Settings
 
 logger = logging.getLogger(__name__)
 
+# Maximum age for cached price data before auto-refreshing
+_CACHE_MAX_AGE_DAYS = 7
+
 
 class MarketDataProvider:
     """Fetches and caches stock price data for backtest evaluation."""
@@ -29,15 +32,29 @@ class MarketDataProvider:
     def _cache_path(self, ticker: str) -> Path:
         return self.cache_dir / f"{ticker.upper()}_prices.csv"
 
+    def _is_cache_stale(self, ticker: str) -> bool:
+        """Check if cached price data is older than _CACHE_MAX_AGE_DAYS."""
+        cache_file = self._cache_path(ticker)
+        if not cache_file.exists():
+            return True
+        try:
+            age = datetime.now() - datetime.fromtimestamp(cache_file.stat().st_mtime)
+            return age > timedelta(days=_CACHE_MAX_AGE_DAYS)
+        except OSError:
+            return True
+
     def _load_prices(self, ticker: str) -> Optional[pd.DataFrame]:
-        """Load price data — from memory cache, disk cache, or yfinance."""
+        """Load price data — from memory cache, disk cache, or yfinance.
+
+        Automatically refreshes stale caches (older than _CACHE_MAX_AGE_DAYS).
+        """
         ticker = ticker.upper()
 
         if ticker in self._price_cache:
             return self._price_cache[ticker]
 
         cache_file = self._cache_path(ticker)
-        if cache_file.exists():
+        if cache_file.exists() and not self._is_cache_stale(ticker):
             try:
                 df = pd.read_csv(cache_file, index_col=0, parse_dates=True)
                 if not df.empty:
@@ -46,6 +63,8 @@ class MarketDataProvider:
                     return df
             except Exception as e:
                 logger.warning(f"Corrupt cache for {ticker}, re-fetching: {e}")
+        elif cache_file.exists():
+            logger.info(f"Cache for {ticker} is stale, refreshing...")
 
         return self._fetch_and_cache(ticker)
 
@@ -87,25 +106,40 @@ class MarketDataProvider:
         """
         Get closing price at or near a given date.
 
-        If the date falls on a weekend/holiday, returns the next available trading day.
+        Lookup order:
+          1. Exact match or nearest trading day on/after the target date
+          2. If target is beyond all data, fall back to the last available price
+             (common when return window extends past cached data)
         """
         df = self._load_prices(ticker)
-        if df is None:
+        if df is None or df.empty:
             return None
 
         target = pd.Timestamp(date)
 
-        # Find the nearest trading day on or after the target date
-        mask = df.index >= target
-        if not mask.any():
-            # Date is after all available data
-            logger.warning(f"No price data for {ticker} on or after {date}")
-            return None
+        # Try forward: nearest trading day on or after target
+        forward_mask = df.index >= target
+        if forward_mask.any():
+            nearest_idx = df.index[forward_mask][0]
+        else:
+            # Target is after all available data — use last available price.
+            # This is better than returning None (which makes entire backtest
+            # return null) since a slightly shorter window still gives useful data.
+            backward_mask = df.index <= target
+            if backward_mask.any():
+                nearest_idx = df.index[backward_mask][-1]
+                gap_days = (target - nearest_idx).days
+                logger.info(
+                    f"{ticker}: {date} is beyond data range, "
+                    f"using last available price from {nearest_idx.date()} ({gap_days}d gap)"
+                )
+            else:
+                logger.warning(f"No price data at all for {ticker}")
+                return None
 
-        nearest_idx = df.index[mask][0]
         price = float(df.loc[nearest_idx, "Close"])
 
-        gap_days = (nearest_idx - target).days
+        gap_days = abs((nearest_idx - target).days)
         if gap_days > 5:
             logger.warning(f"{ticker} price lookup: {date} → {nearest_idx.date()} ({gap_days} day gap)")
 

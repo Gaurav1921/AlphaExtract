@@ -42,9 +42,12 @@ class TestGetPriceAtDate:
         price = provider.get_price_at_date("AAPL", "2023-01-07")
         assert price is not None
 
-    def test_date_after_data_returns_none(self, provider):
-        price = provider.get_price_at_date("AAPL", "2099-01-01")
-        assert price is None
+    def test_date_after_data_uses_last_available(self, provider):
+        """When date exceeds data range, fall back to last available price."""
+        price = provider.get_price_at_date("AAPL", "2025-03-01")
+        # Should return last available price instead of None
+        assert price is not None
+        assert isinstance(price, float)
 
     def test_unknown_ticker_returns_none(self, provider):
         price = provider.get_price_at_date("ZZZZ", "2023-01-02")
@@ -115,6 +118,30 @@ class TestCaching:
         tickers = provider.get_cached_tickers()
         assert "AAPL" in tickers
         assert "MSFT" in tickers
+
+
+class TestStaleCacheDetection:
+
+    def test_nonexistent_cache_is_stale(self, tmp_path):
+        provider = MarketDataProvider(cache_dir=tmp_path)
+        assert provider._is_cache_stale("NONEXISTENT") is True
+
+    def test_fresh_cache_is_not_stale(self, tmp_path):
+        provider = MarketDataProvider(cache_dir=tmp_path)
+        cache_file = provider._cache_path("FRESH")
+        cache_file.write_text("Close\n100")
+        assert provider._is_cache_stale("FRESH") is False
+
+    def test_old_cache_is_stale(self, tmp_path):
+        import os
+        import time
+        provider = MarketDataProvider(cache_dir=tmp_path)
+        cache_file = provider._cache_path("OLD")
+        cache_file.write_text("Close\n100")
+        # Set modification time to 30 days ago
+        old_time = time.time() - (30 * 86400)
+        os.utime(cache_file, (old_time, old_time))
+        assert provider._is_cache_stale("OLD") is True
 
 
 class TestFetchAndCache:
